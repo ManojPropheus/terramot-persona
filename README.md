@@ -1,4 +1,4 @@
-# Census Distribution Explorer
+etup# Census Distribution Explorer
 
 A modern web application for exploring U.S. Census demographic data through interactive maps and animated charts. Click anywhere on the US map to get real-time age, gender, education, and income distributions for that location.
 
