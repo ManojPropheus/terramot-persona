@@ -45,6 +45,8 @@ from distribution.profession_race_distribution import get_distribution as get_pr
 from distribution.profession_race_distribution import get_conditional_distribution as get_profession_race_conditional
 from distribution.age_distribution import get_geography
 from chatbot_service import create_chatbot
+from utils import get_geoid
+
 app = Flask(__name__)
 CORS(app)
 
@@ -636,6 +638,111 @@ def get_joint_probability():
         logger.error(f"Error fetching joint probability: {e}")
         return jsonify({
             "error": "Failed to fetch joint probability data",
+            "details": str(e)
+        }), 500
+
+
+import os
+import io
+import csv
+from flask import current_app, jsonify, request, Response
+
+
+@app.route('/export_csv', methods=['POST'])
+def export_distributions_csv():
+    """
+    Export individual distributions to CSV format,
+    save to disk, and return it as a file download.
+
+    Expected JSON body: {"lat": float, "lng": float}
+    Returns: CSV data with columns: GEOID, bucket, populationCount, type_of_data
+    """
+    try:
+        data = request.get_json()
+        if not data or 'lat' not in data or 'lng' not in data:
+            return jsonify({"error": "Missing required fields: lat, lng"}), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        logger.info(f"Exporting CSV for coordinates: {lat}, {lng}")
+
+        # ... fetch distributions as before ...
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            future_age = executor.submit(get_age_distribution, lat, lng)
+            future_gender = executor.submit(get_gender_distribution, lat, lng)
+            future_education = executor.submit(get_education_distribution, lat, lng)
+            future_income = executor.submit(get_income_distribution, lat, lng)
+            future_profession = executor.submit(get_profession_distribution, lat, lng)
+            future_race_ethnicity = executor.submit(get_race_ethnicity_distribution, lat, lng)
+
+            distributions = {
+                'age': future_age.result(),
+                'gender': future_gender.result(),
+                'education': future_education.result(),
+                'income': future_income.result(),
+                'profession': future_profession.result(),
+                'race_ethnicity': future_race_ethnicity.result()
+            }
+
+        csv_rows = []
+        geoid = None
+
+        for dist_type, dist_data in distributions.items():
+            if not dist_data or 'data' not in dist_data:
+                continue
+            if geoid is None and 'location' in dist_data:
+                geoid = get_geoid(lat, lng)
+            for item in dist_data['data']:
+                csv_rows.append({
+                    'GEOID': geoid or 'Unknown',
+                    'bucket': item['category'],
+                    'populationCount': item['value'],
+                    'type_of_data': dist_type
+                })
+
+
+        if not csv_rows:
+            return jsonify({"error": "No distribution data available for this location"}), 404
+
+        # --- NEW: save to disk ---
+        export_folder = current_app.config.get('EXPORT_FOLDER', 'csv_exports')
+        os.makedirs(export_folder, exist_ok=True)
+
+        filename = f"distributions_{lat}_{lng}.csv"
+        file_path = os.path.join(export_folder, filename)
+        logger.info(f"Writing CSV to {file_path}")
+
+        with open(file_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['GEOID', 'bucket', 'populationCount', 'type_of_data'])
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        logger.info(f"Saved CSV to {file_path}")
+        # --- END NEW ---
+
+        # Convert to CSV string for response
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=['GEOID', 'bucket', 'populationCount', 'type_of_data'])
+        writer.writeheader()
+        writer.writerows(csv_rows)
+        csv_content = output.getvalue()
+        output.close()
+
+        return Response(
+            csv_content,
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename={filename}'
+            }
+        )
+
+    except ValueError as e:
+        logger.error(f"Invalid coordinates: {e}")
+        return jsonify({"error": "Invalid coordinates provided"}), 400
+
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {e}")
+        return jsonify({
+            "error": "Failed to export CSV data",
             "details": str(e)
         }), 500
 

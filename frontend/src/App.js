@@ -808,6 +808,15 @@ function App() {
         body: JSON.stringify({ lat, lng }),
       });
 
+      const csv_export = await fetch('http://localhost:5001/export_csv',{
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: selectedLocation?.lat,
+          lng: selectedLocation?.lng
+        }),
+      });
+
       if (response.ok) {
         const data = await response.json();
         setDistributionData(data);
