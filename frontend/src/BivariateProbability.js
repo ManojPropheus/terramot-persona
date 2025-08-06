@@ -55,11 +55,6 @@ const JOINT_DISTRIBUTION_CONFIGS = {
     variables: ['education', 'sex'],
     color: '#8b5cf6'
   },
-  income_gender: { 
-    title: 'Income × Gender (Old)',
-    variables: ['income', 'gender'],
-    color: '#8b5cf6'
-  },
   profession_gender: { 
     title: 'Profession × Gender',
     variables: ['profession', 'gender'],
@@ -74,34 +69,80 @@ const UNAVAILABLE_DISTRIBUTIONS = {
   income_race: 'Income × Race'
 };
 
-// Conditional value options synchronized with backend standard categories
+// Age brackets and income ranges for each distribution type (raw Census data)
+const DISTRIBUTION_OPTIONS = {
+  age_income: {
+    age: [
+      "Householder under 25 years",
+      "Householder 25 to 44 years", 
+      "Householder 45 to 64 years",
+      "Householder 65 years and over"
+    ],
+    income: [
+      "Less than $10,000", "$10,000 to $14,999", "$15,000 to $19,999",
+      "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999", 
+      "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
+      "$50,000 to $59,999", "$60,000 to $74,999", "$75,000 to $99,999",
+      "$100,000 to $124,999", "$125,000 to $149,999",
+      "$150,000 to $199,999", "$200,000 or more"
+    ]
+  },
+  age_education: {
+    age: [
+      "18 to 24 years", "25 to 34 years", "35 to 44 years", 
+      "45 to 64 years", "65 years and over"
+    ],
+    education: [
+      "Less than 9th grade", "9th to 12th grade, no diploma", 
+      "High school graduate (includes equivalency)", "Some college, no degree",
+      "Associate's degree", "Bachelor's degree", "Graduate or professional degree"
+    ]
+  },
+  education_sex: {
+    education: [
+      "Less than 9th grade", "9th to 12th grade, no diploma", 
+      "High school graduate (includes equivalency)", "Some college, no degree",
+      "Associate's degree", "Bachelor's degree", "Graduate or professional degree"
+    ],
+    sex: ["Male", "Female"]
+  },
+  // Default for other distributions
+  default: {
+    age: [
+      "18 to 24 years", "25 to 34 years", "35 to 44 years", 
+      "45 to 64 years", "65 years and over"
+    ],
+    income: [
+      "$1 to $2,499 or loss", "$2,500 to $4,999", "$5,000 to $7,499", 
+      "$7,500 to $9,999", "$10,000 to $12,499", "$12,500 to $14,999",
+      "$15,000 to $17,499", "$17,500 to $19,999", "$20,000 to $22,499",
+      "$22,500 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999",
+      "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
+      "$50,000 to $54,999", "$55,000 to $64,999", "$65,000 to $74,999",
+      "$75,000 to $99,999", "$100,000 or more"
+    ]
+  }
+};
+
+// Conditional value options 
 const CONDITIONAL_OPTIONS = {
   age: [
     "Under 5 years", "5 to 9 years", "10 to 14 years", "15 to 17 years", 
-    "18 and 19 years", "20 to 24 years", "25 to 29 years", "30 to 34 years",
-    "35 to 44 years", "45 to 54 years", "55 to 64 years", "65 to 74 years",
+    "18 and 19 years", "20 to 24 years", "25 to 29 years", "30 to 34 years", 
+    "35 to 44 years", "45 to 54 years", "55 to 64 years", "65 to 74 years", 
     "75 to 84 years", "85 years and over"
   ],
-  income: [
-    "$1 to $2,499 or loss", "$2,500 to $4,999", "$5,000 to $7,499", 
-    "$7,500 to $9,999", "$10,000 to $12,499", "$12,500 to $14,999",
-    "$15,000 to $17,499", "$17,500 to $19,999", "$20,000 to $22,499",
-    "$22,500 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999",
-    "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
-    "$50,000 to $54,999", "$55,000 to $64,999", "$65,000 to $74,999",
-    "$75,000 to $99,999", "$100,000 or more"
-  ],
+  income: DISTRIBUTION_OPTIONS.default.income,
   gender: ["Male", "Female"],
   sex: ["Male", "Female"],
   race: [
     "White Alone", "Black or African American Alone", "American Indian and Alaska Native Alone", 
     "Asian Alone", "Native Hawaiian and Other Pacific Islander Alone", "Some Other Race Alone", 
-    "Two or More Races", "Hispanic or Latino"
+    "Two or More Races", "Hispanic or Latino", "White Alone, Not Hispanic or Latino"
   ],
   education: [
-    "Less than 9th grade", "9th to 12th grade, no diploma", "High school graduate", 
-    "Some college, no degree", "Associate's degree", "Bachelor's degree", 
-    "Graduate or professional degree"
+    "Less than high school", "High school graduate", "Some college",
+    "Associate degree", "Bachelor's degree", "Graduate degree"
   ],
   profession: [
     "Management, business, science, and arts occupations", 
@@ -509,11 +550,23 @@ function BivariateProbability({ selectedLocation, locationName }) {
                         }}
                       >
                         <option value="">Select value...</option>
-                        {conditionType && CONDITIONAL_OPTIONS[conditionType]?.map(option => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
+                        {conditionType && (() => {
+                          let options = [];
+                          if (selectedDistribution === 'age_income' && DISTRIBUTION_OPTIONS.age_income[conditionType]) {
+                            options = DISTRIBUTION_OPTIONS.age_income[conditionType];
+                          } else if (selectedDistribution === 'age_education' && DISTRIBUTION_OPTIONS.age_education[conditionType]) {
+                            options = DISTRIBUTION_OPTIONS.age_education[conditionType];
+                          } else if (selectedDistribution === 'education_sex' && DISTRIBUTION_OPTIONS.education_sex[conditionType]) {
+                            options = DISTRIBUTION_OPTIONS.education_sex[conditionType];
+                          } else {
+                            options = CONDITIONAL_OPTIONS[conditionType] || [];
+                          }
+                          return options.map(option => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ));
+                        })()}
                       </select>
                     </div>
 

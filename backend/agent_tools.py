@@ -155,20 +155,6 @@ class AgeIncomeJointTool(BaseTool):
         self.track_usage()
         return get_age_income_distribution(lat, lng)
 
-class AgeTenureJointTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="age_tenure_joint",
-            description="Get joint age-tenure distribution showing housing tenure by age groups",
-            use_cases=[
-                "age tenure relationship", "homeownership by age", "rental by age group",
-                "housing tenure by age", "young adult homeownership", "senior housing tenure"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_age_tenure_distribution(lat, lng)
 
 class ProfessionGenderJointTool(BaseTool):
     def __init__(self):
@@ -260,6 +246,21 @@ class ProfessionRaceJointTool(BaseTool):
         self.track_usage()
         return get_profession_race_distribution(lat, lng)
 
+class ProfessionDistributionTool(BaseTool):
+    def __init__(self):
+        super().__init__(
+            name="profession_distribution",
+            description="Get profession/occupation distribution showing employment by industry",
+            use_cases=[
+                "occupation", "profession", "employment", "jobs", "industry",
+                "career", "work", "occupation distribution"
+            ]
+        )
+    
+    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
+        self.track_usage()
+        return get_profession_distribution(lat, lng)
+
 class RaceEthnicityTool(BaseTool):
     def __init__(self):
         super().__init__(
@@ -275,123 +276,22 @@ class RaceEthnicityTool(BaseTool):
         self.track_usage()
         return get_race_ethnicity_distribution(lat, lng)
 
-class TenureTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="tenure",
-            description="Get housing tenure showing owners vs renters",
-            use_cases=[
-                "home ownership", "renters", "housing tenure", "owner occupied",
-                "rental properties", "homeowners", "tenant demographics"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_tenure_distribution(lat, lng)
 
-class IncomeTenureJointTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="income_tenure_joint",
-            description="Get joint income-tenure distribution showing housing costs vs tenure status",
-            use_cases=[
-                "housing costs", "rent burden", "mortgage costs", "housing affordability",
-                "cost burdened households", "housing expenses by tenure"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_income_tenure_distribution(lat, lng)
 
-class FinancialCharacteristicsTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="financial_characteristics",
-            description="Get detailed housing financial characteristics including costs and affordability",
-            use_cases=[
-                "housing costs", "mortgage payments", "rent costs", "housing affordability",
-                "median rent", "median home costs", "financial housing data"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_financial_characteristics_distribution(lat, lng)
 
-class LanguageTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="language",
-            description="Get languages spoken at home demographics",
-            use_cases=[
-                "languages spoken", "linguistic diversity", "native language",
-                "english proficiency", "bilingual", "foreign language"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_language_spoken_at_home_distribution(lat, lng)
 
-class CommutingTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="commuting",
-            description="Get commuting patterns and transportation methods",
-            use_cases=[
-                "commuting", "transportation", "travel to work", "commute time",
-                "public transit", "driving", "work from home"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_commuting_patterns_distribution(lat, lng)
 
-class PlacesOfInterestTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="places_of_interest",
-            description="Get places of interest, POI analysis, and lifestyle/behavioral patterns from location data",
-            use_cases=[
-                "places of interest", "POI", "lifestyle", "behavioral patterns",
-                "shopping", "dining", "entertainment", "recreation", "services",
-                "what places do people visit", "lifestyle analysis", "psychographic",
-                "consumer behavior", "area character", "local amenities"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_places_of_interest_distribution(lat, lng)
 
-class TrafficMobilityTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="traffic_mobility",
-            description="Get traffic patterns, mobility data, transportation infrastructure, and movement behavior analysis",
-            use_cases=[
-                "traffic", "mobility", "transportation", "infrastructure", "roads",
-                "congestion", "accessibility", "walkability", "public transport",
-                "parking", "traffic flow", "pedestrian", "cycling", "mobility patterns",
-                "transport dependency", "commuter oriented", "vehicle dependent"
-            ]
-        )
-    
-    def execute(self, lat: float, lng: float, **kwargs) -> Dict[str, Any]:
-        self.track_usage()
-        return get_traffic_mobility_distribution(lat, lng)
 
 class ConditionalAnalysisTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="conditional_analysis",
-            description="Get conditional distributions from joint data (e.g., income for specific age groups)",
+            description="Get conditional distributions from joint data with unified age bracket support",
             use_cases=[
                 "income for age group", "age for income bracket", "conditional probability",
-                "specific demographics", "filtered analysis", "subset analysis"
+                "specific demographics", "filtered analysis", "subset analysis", "unified age brackets",
+                "consistent age ranges", "age demographic analysis", "bivariate conditional analysis"
             ]
         )
     
@@ -402,49 +302,75 @@ class ConditionalAnalysisTool(BaseTool):
         condition_value = kwargs.get('condition_value')
         
         if not condition_type or not condition_value:
-            return {"error": "Missing condition_type or condition_value for conditional analysis"}
+            return {
+                "error": "Missing condition_type or condition_value for conditional analysis",
+                "help": {
+                    "available_distributions": [
+                        "age_income", "age_gender", "age_race", "age_education",
+                        "income_gender", "income_gender_new", "income_profession", 
+                        "gender_education", "education_race", "profession_race"
+                    ],
+                    "example_usage": {
+                        "base_distribution": "age_income",
+                        "condition_type": "age", 
+                        "condition_value": "25 to 34 years"
+                    }
+                }
+            }
         
-        if base_distribution == 'age_income':
-            joint_data = get_age_income_distribution(lat, lng)
-            return get_age_income_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'age_tenure':
-            joint_data = get_age_tenure_distribution(lat, lng)
-            return get_age_tenure_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'profession':
-            joint_data = get_profession_distribution(lat, lng)
-            return get_profession_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'income_tenure':
-            joint_data = get_income_tenure_distribution(lat, lng)
-            return get_income_tenure_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'age_gender':
-            joint_data = get_age_gender_distribution(lat, lng)
-            return get_age_gender_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'age_race':
-            joint_data = get_age_race_distribution(lat, lng)
-            return get_age_race_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'age_education':
-            joint_data = get_age_education_distribution(lat, lng)
-            return get_age_education_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'income_gender':
-            joint_data = get_income_gender_distribution(lat, lng)
-            return get_income_gender_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'gender_education':
-            joint_data = get_gender_education_distribution(lat, lng)
-            return get_gender_education_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'income_gender_new':
-            joint_data = get_income_gender_new_distribution(lat, lng)
-            return get_income_gender_new_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'income_profession':
-            joint_data = get_income_profession_distribution(lat, lng)
-            return get_income_profession_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'education_race':
-            joint_data = get_education_race_distribution(lat, lng)
-            return get_education_race_conditional(joint_data, condition_type, condition_value)
-        elif base_distribution == 'profession_race':
-            joint_data = get_profession_race_distribution(lat, lng)
-            return get_profession_race_conditional(joint_data, condition_type, condition_value)
-        else:
-            return {"error": f"Unsupported base distribution: {base_distribution}"}
+        # Execute conditional analysis for each supported distribution
+        try:
+            if base_distribution == 'age_income':
+                joint_data = get_age_income_distribution(lat, lng)
+                result = get_age_income_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'age_gender':
+                joint_data = get_age_gender_distribution(lat, lng)
+                result = get_age_gender_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'age_race':
+                joint_data = get_age_race_distribution(lat, lng)
+                result = get_age_race_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'age_education':
+                joint_data = get_age_education_distribution(lat, lng)
+                result = get_age_education_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'income_gender':
+                joint_data = get_income_gender_distribution(lat, lng)
+                result = get_income_gender_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'gender_education':
+                joint_data = get_gender_education_distribution(lat, lng)
+                result = get_gender_education_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'income_gender_new':
+                joint_data = get_income_gender_new_distribution(lat, lng)
+                result = get_income_gender_new_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'income_profession':
+                joint_data = get_income_profession_distribution(lat, lng)
+                result = get_income_profession_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'education_race':
+                joint_data = get_education_race_distribution(lat, lng)
+                result = get_education_race_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'profession_race':
+                joint_data = get_profession_race_distribution(lat, lng)
+                result = get_profession_race_conditional(joint_data, condition_type, condition_value)
+            else:
+                available_dists = [
+                    "age_income", "age_gender", "age_race", "age_education",
+                    "income_gender", "income_gender_new", "income_profession", 
+                    "gender_education", "education_race", "profession_race"
+                ]
+                return {
+                    "error": f"Unsupported base distribution: {base_distribution}",
+                    "available_distributions": available_dists
+                }
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "error": f"Failed to execute conditional analysis: {str(e)}",
+                "base_distribution": base_distribution,
+                "condition_type": condition_type,
+                "condition_value": condition_value
+            }
+
 
 class ToolRegistry:
     """Registry of all available tools for the agent"""
@@ -456,18 +382,11 @@ class ToolRegistry:
             'education_distribution': EducationDistributionTool(),
             'income_distribution': IncomeDistributionTool(),
             'age_income_joint': AgeIncomeJointTool(),
-            'age_tenure_joint': AgeTenureJointTool(),
+            'profession_distribution': ProfessionDistributionTool(),
             'profession_gender_joint': ProfessionGenderJointTool(),
             'race_ethnicity': RaceEthnicityTool(),
-            'tenure': TenureTool(),
-            'income_tenure_joint': IncomeTenureJointTool(),
-            'financial_characteristics': FinancialCharacteristicsTool(),
-            'language': LanguageTool(),
-            'commuting': CommutingTool(),
-            'places_of_interest': PlacesOfInterestTool(),
-            'traffic_mobility': TrafficMobilityTool(),
             'conditional_analysis': ConditionalAnalysisTool(),
-            # New joint distribution tools
+            # Joint distribution tools
             'gender_education_joint': GenderEducationJointTool(),
             'income_gender_new_joint': IncomeGenderNewJointTool(),
             'income_profession_joint': IncomeProfessionJointTool(),

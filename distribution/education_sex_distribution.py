@@ -338,7 +338,7 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
 
         result = [
             {
-                "education_level": row["education_level"],
+                "category": row["education_level"],
                 "value": int(row["population"]),
                 "percentage": float((row["population"] / total_population) * 100) if total_population > 0 else 0
             }
@@ -363,7 +363,7 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
 
         result = [
             {
-                "sex": row["sex"],
+                "category": row["sex"],
                 "value": int(row["population"]),
                 "percentage": float((row["population"] / total_population) * 100) if total_population > 0 else 0
             }
