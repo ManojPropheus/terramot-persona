@@ -46,6 +46,7 @@ from distribution.profession_race_distribution import get_conditional_distributi
 from distribution.age_distribution import get_geography
 from chatbot_service import create_chatbot
 from utils import get_geoid
+from trade_area_demographics import get_isochrone_response
 
 app = Flask(__name__)
 CORS(app)
@@ -745,6 +746,38 @@ def export_distributions_csv():
             "error": "Failed to export CSV data",
             "details": str(e)
         }), 500
+
+
+@app.route('/storewise_demographics',methods=['POST'])
+def get_storewise_demographics():
+    try:
+        data = request.get_json()
+        
+        if not data or 'lat' not in data or 'lng' not in data:
+            return jsonify({
+                "error": "Missing required fields: lat, lng"
+            }), 400
+            
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+
+        response = get_isochrone_response(lat=lat,lon=lng)
+        logger.info(f"Successfully fetched all distributions for {lat}, {lng}")
+        return jsonify(response)
+        
+    except ValueError as e:
+        logger.error(f"Invalid coordinates: {e}")
+        return jsonify({
+            "error": "Invalid coordinates provided"
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Error fetching distributions: {e}")
+        return jsonify({
+            "error": "Failed to fetch distribution data",
+            "details": str(e)
+        }), 5
+
 
 
 @app.route('/health', methods=['GET'])
