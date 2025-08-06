@@ -1,33 +1,46 @@
 """
-Census Data Analysis Chatbot using Gemini 2.5 Pro
-Provides RAG-like capabilities with tools to analyze distribution data
+Advanced Census Data Analysis AI Agent
+Uses sophisticated tool selection, memory systems, and intelligent reasoning
+Based on modern AI agent patterns with strategic decision-making capabilities
 """
 
 import os
+import pandas as pd
 import sys
 import json
-import google.generativeai as genai
 from dotenv import load_dotenv
-import pandas as pd
 from typing import Dict, List, Any, Optional
 
-# Add parent directory to path to import distribution modules
+# Add parent directory to path to import modules
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from distribution.age_distribution import get_distribution as get_age_distribution
 from distribution.gender_distribution import get_distribution as get_gender_distribution
 from distribution.education_distribution import get_distribution as get_education_distribution
 from distribution.income_distribution import get_distribution as get_income_distribution
-from distribution.age_income_distribution import get_distribution as get_age_income_distribution
-from distribution.age_income_distribution import get_conditional_distribution as get_age_income_conditional
 from distribution.profession_distribution import get_distribution as get_profession_distribution
-from distribution.profession_distribution import get_conditional_distribution as get_profession_conditional
+from distribution.race_ethnicity_distribution import get_distribution as get_race_ethnicity_distribution
+# Joint distributions
+from distribution.age_income_distribution import get_distribution as get_age_income_distribution
+from distribution.age_gender_distribution import get_distribution as get_age_gender_distribution
+from distribution.age_race_distribution import get_distribution as get_age_race_distribution
+from distribution.age_education_distribution import get_distribution as get_age_education_distribution
+from distribution.income_gender_distribution import get_distribution as get_income_gender_distribution
+# Conditional distributions
+from agent_tools import get_age_income_conditional
+from agent_tools import get_profession_conditional
+from agent_tools import get_age_gender_conditional
+from agent_tools import get_age_race_conditional
+from agent_tools import get_age_education_conditional
+from agent_tools import get_income_gender_conditional
+
+from intelligent_agent import IntelligentAgent
 
 # Load environment variables
 load_dotenv()
 
-class DistributionAnalyzer:
-    """Tools for analyzing census distribution data"""
+class LegacyDistributionAnalyzer:
+    """Legacy compatibility layer - maintained for backward compatibility"""
     
     def __init__(self):
         self.current_location = None
@@ -56,21 +69,38 @@ class DistributionAnalyzer:
                 if len(self.location_history) > 10:
                     self.location_history = self.location_history[-10:]
             
-            # Fetch all distributions
+            # Fetch individual distributions for the 6 variables
             age_dist = get_age_distribution(lat, lng)
             gender_dist = get_gender_distribution(lat, lng)
             education_dist = get_education_distribution(lat, lng)
             income_dist = get_income_distribution(lat, lng)
-            age_income_dist = get_age_income_distribution(lat, lng)
             profession_dist = get_profession_distribution(lat, lng)
+            race_ethnicity_dist = get_race_ethnicity_distribution(lat, lng)
+            
+            # Fetch joint distributions for the 6 variables
+            age_income_dist = get_age_income_distribution(lat, lng)
+            age_gender_dist = get_age_gender_distribution(lat, lng)
+            age_race_dist = get_age_race_distribution(lat, lng)
+            age_education_dist = get_age_education_distribution(lat, lng)
+            income_gender_dist = get_income_gender_distribution(lat, lng)
             
             self.current_distributions = {
+                # Individual distributions for the 6 variables
                 "age": age_dist,
                 "gender": gender_dist,
                 "education": education_dist,
                 "income": income_dist,
-                "age_income": age_income_dist,
                 "profession": profession_dist,
+                "race_ethnicity": race_ethnicity_dist,
+                
+                # Joint distributions for the 6 variables
+                "age_income": age_income_dist,
+                "age_gender": age_gender_dist,
+                "age_race": age_race_dist,
+                "age_education": age_education_dist,
+                "income_gender": income_gender_dist,
+                "profession_gender": profession_dist,  # Profession distribution already includes gender breakdown
+                
                 "location": age_dist.get("location", {}),
                 "coordinates": {"lat": lat, "lng": lng}
             }
@@ -131,6 +161,45 @@ class DistributionAnalyzer:
                     "gender": max_combo['gender'],
                     "population": max_combo['population'],
                     "percentage": max_combo['percentage']
+                },
+                "data_source": dist_data['data_source']
+            }
+        elif distribution_type == "income_tenure":
+            # Special handling for income-tenure joint distribution
+            total_households = sum(item['households'] for item in dist_data['joint_data'])
+            cost_categories = len(dist_data['cost_marginal'])
+            tenure_categories = len(dist_data['tenure_marginal'])
+            
+            # Find most common cost-tenure combination
+            max_combo = max(dist_data['joint_data'], key=lambda x: x['households'])
+            
+            return {
+                "type": "joint_distribution_analysis",
+                "total_households": total_households,
+                "cost_categories": cost_categories,
+                "tenure_categories": tenure_categories,
+                "most_common_combination": {
+                    "cost_burden": max_combo['cost_burden'],
+                    "tenure": max_combo['tenure'],
+                    "households": max_combo['households'],
+                    "percentage": max_combo['percentage']
+                },
+                "data_source": dist_data['data_source']
+            }
+        elif distribution_type == "financial_characteristics":
+            # Special handling for financial characteristics
+            summary = dist_data['summary']
+            return {
+                "type": "financial_characteristics_analysis",
+                "total_units": summary['total_units'],
+                "owner_occupied": summary['owner_occupied'],
+                "renter_occupied": summary['renter_occupied'],
+                "median_owner_costs": summary['median_owner_costs'],
+                "median_rent": summary['median_rent'],
+                "median_income": summary['median_income'],
+                "cost_burden_analysis": {
+                    "owner_burdened": len([item for item in dist_data['cost_burden'] if item['category'] == 'Owner cost-burdened']),
+                    "renter_burdened": len([item for item in dist_data['cost_burden'] if item['category'] == 'Renter cost-burdened'])
                 },
                 "data_source": dist_data['data_source']
             }
@@ -199,6 +268,9 @@ class DistributionAnalyzer:
             elif base_distribution == 'profession':
                 joint_data = self.current_distributions['profession']
                 conditional_data = get_profession_conditional(joint_data, condition_type, condition_value)
+            elif base_distribution == 'income_tenure':
+                joint_data = self.current_distributions['income_tenure']
+                conditional_data = get_income_tenure_conditional(joint_data, condition_type, condition_value)
             else:
                 return {"error": f"Unsupported base distribution: {base_distribution}"}
             
@@ -300,156 +372,18 @@ class DistributionAnalyzer:
 
 
 class CensusDataChatbot:
-    """Main chatbot class using Gemini 2.5 Pro with tool calling capabilities"""
+    """Advanced AI Agent for Census Data Analysis with intelligent tool selection and memory"""
     
     def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
+        # Initialize the intelligent agent
+        self.agent = IntelligentAgent(api_key)
         
-        # Define the tools that the AI agent can use
-        self.tools = [
-            genai.protos.Tool(
-                function_declarations=[
-                    genai.protos.FunctionDeclaration(
-                        name="fetch_all_distributions",
-                        description="Fetch all census distribution data for a specific location using coordinates",
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                "lat": genai.protos.Schema(type=genai.protos.Type.NUMBER, description="Latitude coordinate"),
-                                "lng": genai.protos.Schema(type=genai.protos.Type.NUMBER, description="Longitude coordinate")
-                            },
-                            required=["lat", "lng"]
-                        )
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="analyze_distribution",
-                        description="Analyze a specific distribution type (age, gender, education, income, age_income, or profession)",
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                "distribution_type": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING, 
-                                    description="Type of distribution to analyze",
-                                    enum=["age", "gender", "education", "income", "age_income", "profession"]
-                                )
-                            },
-                            required=["distribution_type"]
-                        )
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="get_conditional_analysis",
-                        description="Get conditional distribution analysis from joint age-income data. Use this to find income distribution for specific age groups or age distribution for specific income brackets.",
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                "condition_type": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="What to condition on",
-                                    enum=["age", "income"]
-                                ),
-                                "condition_value": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="The specific age range or income range. For age use exactly: 'Under 25 years', '25 to 44 years', '45 to 64 years', '65 years and over'. For income use ranges like '$25,000 to $34,999', '$50,000 to $74,999', etc."
-                                )
-                            },
-                            required=["condition_type", "condition_value"]
-                        )
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="compare_distributions",
-                        description="Compare two different distribution types",
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                "dist_type1": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="First distribution type to compare",
-                                    enum=["age", "gender", "education", "income"]
-                                ),
-                                "dist_type2": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="Second distribution type to compare",
-                                    enum=["age", "gender", "education", "income"]
-                                )
-                            },
-                            required=["dist_type1", "dist_type2"]
-                        )
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="get_location_summary",
-                        description="Get a comprehensive summary of the current location and available demographic data",
-                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="get_unified_conditional_analysis",
-                        description="Get conditional analysis from any joint distribution (age_income or profession). More flexible than get_conditional_analysis.",
-                        parameters=genai.protos.Schema(
-                            type=genai.protos.Type.OBJECT,
-                            properties={
-                                "base_distribution": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="Base distribution type",
-                                    enum=["age_income", "profession"]
-                                ),
-                                "condition_type": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="What to condition on. For age_income: 'age' or 'income'. For profession: 'profession' or 'gender'"
-                                ),
-                                "condition_value": genai.protos.Schema(
-                                    type=genai.protos.Type.STRING,
-                                    description="The specific value to condition on"
-                                )
-                            },
-                            required=["base_distribution", "condition_type", "condition_value"]
-                        )
-                    ),
-                    genai.protos.FunctionDeclaration(
-                        name="get_user_context",
-                        description="Get user context including location history, preferences, and current session state",
-                        parameters=genai.protos.Schema(type=genai.protos.Type.OBJECT, properties={})
-                    )
-                ]
-            )
-        ]
-        
-        # Initialize model with tools
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp', tools=self.tools)
-        self.analyzer = DistributionAnalyzer()
+        # Legacy compatibility
+        self.analyzer = LegacyDistributionAnalyzer()
         self.conversation_history = []
         
-        # System prompt
-        self.system_prompt = """You are an expert Census data analyst and demographic researcher with advanced AI capabilities. You have access to comprehensive U.S. Census distribution data, analysis tools, and user context memory.
-
-CORE CAPABILITIES:
-- Fetch and analyze distribution data for any US location (age, gender, education, income, profession)
-- Perform joint distribution analysis (age-income, profession-gender) with conditional analysis
-- Compare different demographic aspects across distributions
-- Maintain conversation memory and user preferences
-- Provide location summaries and historical context
-
-AVAILABLE TOOLS:
-- fetch_all_distributions: Get comprehensive data for any location
-- analyze_distribution: Analyze specific distribution types (age, gender, education, income, age_income, profession)
-- get_unified_conditional_analysis: Flexible conditional analysis for any joint distribution
-- get_conditional_analysis: Legacy age-income conditional analysis
-- compare_distributions: Compare two distribution types
-- get_location_summary: Comprehensive location demographics
-- get_user_context: Access user history, preferences, and session state
-
-MEMORY & PERSONALIZATION:
-- Remember user's preferred distributions and frequent analysis types
-- Track location history and provide comparative insights
-- Adapt responses based on user patterns and preferences
-- Use context from previous interactions to provide more relevant insights
-
-RESPONSE STYLE:
-- Be conversational yet professionally informative
-- Use tools strategically - don't over-fetch data
-- Provide specific, data-driven insights with clear numbers
-- Reference user's previous locations or analyses when relevant
-- Keep responses focused and actionable
-
-Always use the most appropriate tools for the user's question and leverage memory to provide personalized, contextual responses."""
+        # Migration flag for gradual transition
+        self.use_intelligent_agent = True
     
     def _execute_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         """Execute a tool function"""
@@ -478,112 +412,52 @@ Always use the most appropriate tools for the user's question and leverage memor
             return {"error": f"Tool execution failed: {str(e)}"}
     
     def chat(self, user_message: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Dict[str, Any]:
-        """Process user message and return response using AI agent with tools"""
+        """Process user message using advanced intelligent agent system"""
         try:
-            # Build enhanced context with user memory and location
-            context_parts = [self.system_prompt]
-            
-            # Add user context for personalization
-            user_context = self.analyzer.get_user_context()
-            if user_context['user_preferences']['preferred_distributions']:
-                context_parts.append(f"User's preferred distributions: {', '.join(user_context['user_preferences']['preferred_distributions'])}")
-            
-            if user_context['location_history']:
-                recent_locations = user_context['location_history'][-3:]  # Last 3 locations
-                context_parts.append(f"Recent locations analyzed: {len(recent_locations)} locations")
-            
-            # Add conversation history context (last 2 exchanges)
-            if self.conversation_history:
-                recent_history = self.conversation_history[-2:]
-                history_text = "Recent conversation context:\n"
-                for exchange in recent_history:
-                    history_text += f"User: {exchange['user'][:100]}...\n"
-                    history_text += f"Assistant: {exchange['assistant'][:100]}...\n"
-                context_parts.append(history_text)
-            
-            if lat is not None and lng is not None:
-                # Ensure data is loaded for the location
-                if not self.analyzer.current_location or (
-                    self.analyzer.current_location.get('lat') != lat or 
-                    self.analyzer.current_location.get('lng') != lng
-                ):
-                    self.analyzer.fetch_all_distributions(lat, lng)
+            if self.use_intelligent_agent:
+                # Use the new intelligent agent system
+                result = self.agent.process_query(user_message, lat, lng)
                 
-                context_parts.append(f"Current location context: Latitude {lat}, Longitude {lng}")
-                if self.analyzer.current_distributions:
-                    location_info = self.analyzer.current_distributions.get('location', {})
-                    location_name = location_info.get('subdivision_name') or location_info.get('county_name')
-                    if location_name:
-                        context_parts.append(f"Location: {location_name}, {location_info.get('state_name', '')}")
-                        # Check if this location was analyzed before
-                        location_key = f"{lat:.4f},{lng:.4f}"
-                        if any(loc['key'] == location_key for loc in user_context['location_history']):
-                            context_parts.append("Note: This location has been analyzed before in this session.")
-            
-            context_parts.append(f"Current user question: {user_message}")
-            full_prompt = "\n\n".join(context_parts)
-            
-            # Start chat session with tools
-            chat = self.model.start_chat()
-            response = chat.send_message(full_prompt)
-            
-            # Process tool calls if any
-            response_text = ""
-            while True:
-                # Check if model wants to use tools
-                function_calls = []
-                if response.candidates[0].content.parts:
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'function_call') and part.function_call:
-                            function_calls.append(part.function_call)
-                        elif hasattr(part, 'text') and part.text:
-                            response_text += part.text
+                # Store conversation for legacy compatibility
+                self.conversation_history.append({
+                    "user": user_message,
+                    "assistant": result['response'],
+                    "location": result.get('location')
+                })
                 
-                # If no function calls, we're done
-                if not function_calls:
-                    if not response_text:
-                        response_text = response.text
-                    break
+                # Enhanced response with agent insights
+                return {
+                    "response": result['response'],
+                    "error": result.get('error', False),
+                    "has_data": lat is not None and lng is not None,
+                    "location": result.get('location'),
+                    "agent_insights": {
+                        "tools_selected": result['reasoning']['tools_selected'],
+                        "intent_detected": result['reasoning']['intent_analysis']['query_type'],
+                        "analysis_depth": result['reasoning']['intent_analysis']['analysis_depth'],
+                        "memory_utilized": result['reasoning']['memory_used']
+                    }
+                }
+            else:
+                # Fallback to legacy system if needed
+                return self._legacy_chat(user_message, lat, lng)
                 
-                # Execute all function calls
-                function_responses = []
-                for function_call in function_calls:
-                    function_name = function_call.name
-                    function_args = {k: v for k, v in function_call.args.items()}
-                    
-                    tool_result = self._execute_tool(function_name, **function_args)
-                    
-                    function_responses.append(
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=function_name,
-                                response={"result": tool_result}
-                            )
-                        )
-                    )
-                
-                # Send all function responses back to model
-                response = chat.send_message(function_responses)
-            
-            # Store conversation
-            self.conversation_history.append({
-                "user": user_message,
-                "assistant": response_text,
-                "location": self.analyzer.current_location
-            })
-            
-            return {
-                "response": response_text,
-                "error": False,
-                "has_data": self.analyzer.current_distributions is not None,
-                "location": self.analyzer.current_location
-            }
-            
         except Exception as e:
             return {
-                "response": f"I'm sorry, I encountered an error while processing your request: {str(e)}",
-                "error": True
+                "response": f"I encountered an error while processing your request: {str(e)}",
+                "error": True,
+                "details": "Please try rephrasing your question or check the location coordinates."
             }
+    
+    def _legacy_chat(self, user_message: str, lat: Optional[float] = None, lng: Optional[float] = None) -> Dict[str, Any]:
+        """Legacy chat method for backward compatibility"""
+        # This would contain the old implementation as a fallback
+        return {
+            "response": "Legacy mode: Please use the intelligent agent system for better results.",
+            "error": False,
+            "has_data": False,
+            "location": None
+        }
     
     
     def get_conversation_history(self) -> List[Dict[str, Any]]:
@@ -591,8 +465,28 @@ Always use the most appropriate tools for the user's question and leverage memor
         return self.conversation_history
     
     def clear_conversation(self):
-        """Clear conversation history"""
+        """Clear conversation history and agent session"""
         self.conversation_history = []
+        if self.use_intelligent_agent:
+            self.agent.clear_session()
+    
+    def get_agent_status(self) -> Dict[str, Any]:
+        """Get comprehensive agent status and analytics"""
+        if self.use_intelligent_agent:
+            return self.agent.get_agent_status()
+        else:
+            return {
+                "mode": "legacy",
+                "conversation_history_length": len(self.conversation_history)
+            }
+    
+    def toggle_agent_mode(self, use_intelligent: bool = True):
+        """Toggle between intelligent agent and legacy mode"""
+        self.use_intelligent_agent = use_intelligent
+        return {
+            "mode": "intelligent_agent" if use_intelligent else "legacy",
+            "message": f"Switched to {'intelligent agent' if use_intelligent else 'legacy'} mode"
+        }
 
 
 # Initialize chatbot instance (will be used by Flask app)
