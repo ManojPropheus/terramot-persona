@@ -138,14 +138,6 @@ Data_collection_pipeline/
 - `POST /geography` - Get location info from coordinates
 - `GET /health` - Health check endpoint
 
-## 🎨 Design System
-
-Following **Propheus** design principles:
-- **Colors**: Teal (#008a89), Blue (#319dff), Dark theme
-- **Typography**: Inter font family with multiple weights
-- **Components**: Modern cards, buttons, and form elements
-- **Layout**: Clean, professional, technical aesthetic
-
 ## 🔧 Configuration
 
 ### Environment Variables
