@@ -17,7 +17,7 @@ CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 def get_geography(lat: float, lon: float) -> dict:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -34,19 +34,40 @@ def get_geography(lat: float, lon: float) -> dict:
 
     state = geogs.get("States", [{}])[0]
     county = geogs.get("Counties", [{}])[0]
-    subs = geogs.get("County Subdivisions", [])
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
 
-    subdiv_fips, subdiv_name = (subs[0].get("COUSUB"), subs[0].get("NAME")) if subs else (None, None)
+    tract_fips, tract_name = (tracts[0].get("TRACT"), tracts[0].get("NAME")) if tracts else (None, None)
+    
+    if blocks:
+        block = blocks[0]
+        block_fips = block.get("BLOCK")
+        block_name = block.get("NAME")
+        block_geoid = block.get("GEOID")
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
     return {
         "state_fips": state.get("STATE"), "state_name": state.get("NAME"),
         "county_fips": county.get("COUNTY"), "county_name": county.get("NAME"),
-        "subdivision_fips": subdiv_fips, "subdivision_name": subdiv_name
+        "tract_fips": tract_fips, "tract_name": tract_name,
+        "block_group_fips": block_group_fips, "block_group_name": block_group_name,
+        "block_fips": block_fips, "block_name": block_name, "block_geoid": block_geoid
     }
 
 
-def get_age_income_data(state_fips: str, county_fips: str, subdivision_fips: str = None,
-                        year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_age_income_data(state_fips: str, county_fips: str, tract_fips: str = None,
+                        block_group_fips: str = None, year: int = 2023, force_tract: bool = False)-> pd.DataFrame:
     """
     Fetches joint age-income distribution from Census ACS Detailed Table B19037.
     """
@@ -58,12 +79,19 @@ def get_age_income_data(state_fips: str, county_fips: str, subdivision_fips: str
         params["key"] = CENSUS_API_KEY
 
     geo_level, params["in"] = ("County", f"state:{state_fips}")
-    if subdivision_fips and not force_county:
-        geo_level = "County Subdivision"
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        geo_level = "Block Group"
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        geo_level = "Census Tract"
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
+        geo_level = "County"
         params["for"] = f"county:{county_fips}"
+        params["in"] = f"state:{state_fips}"
 
     print(f"Fetching Age/Income data for {geo_level}...")
     try:
@@ -103,7 +131,7 @@ def get_age_income_data(state_fips: str, county_fips: str, subdivision_fips: str
     return pd.DataFrame(records)
 
 
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
     Get joint age-income distribution for a location.
     Returns both marginal distributions and joint distribution data.
@@ -112,15 +140,34 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
     if not geo_info.get("state_fips"): return {}
 
     df = get_age_income_data(
-        state_fips=geo_info["state_fips"], county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"], year=year, force_county=force_county
+        state_fips=geo_info["state_fips"],
+        county_fips=geo_info["county_fips"],
+        tract_fips=geo_info["tract_fips"],
+        block_group_fips=geo_info["block_group_fips"],
+        year=year,
+        force_tract=force_tract
     )
 
     if df.empty: return {}
 
-    # Calculate marginal distributions
+    # Calculate marginal distributions with proper ordering
     age_marginal = df.groupby('age_range')['households'].sum().reset_index()
     income_marginal = df.groupby('income_range')['households'].sum().reset_index()
+    
+    # Sort marginals in ascending order
+    age_order = ["Under 25 years", "25 to 44 years", "45 to 64 years", "65 years and over"]
+    income_order = ["Less than $10,000", "$10,000 to $14,999", "$15,000 to $19,999",
+                   "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999", 
+                   "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
+                   "$50,000 to $59,999", "$60,000 to $74,999", "$75,000 to $99,999",
+                   "$100,000 to $124,999", "$125,000 to $149,999", "$150,000 to $199,999",
+                   "$200,000 or more"]
+    
+    age_marginal['sort_order'] = age_marginal['age_range'].map({v: i for i, v in enumerate(age_order)})
+    age_marginal = age_marginal.sort_values('sort_order').drop('sort_order', axis=1)
+    
+    income_marginal['sort_order'] = income_marginal['income_range'].map({v: i for i, v in enumerate(income_order)})
+    income_marginal = income_marginal.sort_values('sort_order').drop('sort_order', axis=1)
     
     total_households = df['households'].sum()
     
@@ -158,7 +205,10 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "location": {
             "state_name": geo_info["state_name"],
             "county_name": geo_info["county_name"],
-            "subdivision_name": geo_info["subdivision_name"]
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
         },
         "data_source": "Census ACS Detailed Table B19037"
     }
@@ -166,7 +216,7 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
 
 def get_conditional_distribution(joint_data: dict, condition_type: str, condition_value: str) -> dict:
     """
-    Get conditional distribution from joint data.
+    Get conditional distribution from joint data with age range mapping support.
     
     Args:
         joint_data: Result from get_distribution()
@@ -182,10 +232,26 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
     joint_df = pd.DataFrame(joint_data['joint_data'])
     
     if condition_type == 'age':
+        # Map frontend age range to backend age range if needed
+        from .age_range_mapper import map_frontend_age_to_backend
+        
+        backend_age_range = map_frontend_age_to_backend(condition_value, 'age_income')
+        if backend_age_range is None:
+            # Try using the condition_value directly (might already be a backend range)
+            backend_age_range = condition_value
+        
         # Given age range, return income distribution
-        filtered_data = joint_df[joint_df['age_range'] == condition_value]
+        filtered_data = joint_df[joint_df['age_range'] == backend_age_range]
         if filtered_data.empty:
-            return {"error": f"No data found for age range: {condition_value}"}
+            # Check if this is a valid frontend age range that maps to a backend range
+            from .age_range_mapper import get_available_frontend_ages, get_backend_age_ranges
+            available_frontend = get_available_frontend_ages('age_income')
+            available_backend = get_backend_age_ranges('age_income')
+            
+            if condition_value in available_frontend:
+                return {"error": f"Data not available for age range '{condition_value}'. This age range maps to '{backend_age_range}' but no data found for that range."}
+            else:
+                return {"error": f"Age range '{condition_value}' not supported for age-income data. Available age ranges: {', '.join(available_backend)}"}
         
         total_households = filtered_data['households'].sum()
         
@@ -198,9 +264,14 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
             for _, row in filtered_data.iterrows()
         ]
         
+        # Use original condition_value in the display
+        condition_display = condition_value
+        if backend_age_range != condition_value:
+            condition_display = f"{condition_value} (grouped as {backend_age_range})"
+        
         return {
             "type": "conditional_income_given_age",
-            "condition": f"Age: {condition_value}",
+            "condition": f"Age: {condition_display}",
             "data": result,
             "total_households": int(total_households),
             "data_source": joint_data["data_source"]
