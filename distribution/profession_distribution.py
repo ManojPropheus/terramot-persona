@@ -17,7 +17,7 @@ CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 def get_geography(lat: float, lon: float) -> dict:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -34,36 +34,62 @@ def get_geography(lat: float, lon: float) -> dict:
 
     state = geogs.get("States", [{}])[0]
     county = geogs.get("Counties", [{}])[0]
-    subs = geogs.get("County Subdivisions", [])
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
 
-    subdiv_fips, subdiv_name = (subs[0].get("COUSUB"), subs[0].get("NAME")) if subs else (None, None)
+    tract_fips, tract_name = (tracts[0].get("TRACT"), tracts[0].get("NAME")) if tracts else (None, None)
+    
+    if blocks:
+        block = blocks[0]
+        block_fips = block.get("BLOCK")
+        block_name = block.get("NAME")
+        block_geoid = block.get("GEOID")
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
     return {
         "state_fips": state.get("STATE"), "state_name": state.get("NAME"),
         "county_fips": county.get("COUNTY"), "county_name": county.get("NAME"),
-        "subdivision_fips": subdiv_fips, "subdivision_name": subdiv_name
+        "tract_fips": tract_fips, "tract_name": tract_name,
+        "block_group_fips": block_group_fips, "block_group_name": block_group_name,
+        "block_fips": block_fips, "block_name": block_name, "block_geoid": block_geoid
     }
 
 
-def get_profession_distribution(state_fips: str, county_fips: str, subdivision_fips: str = None,
-                        year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_profession_distribution(state_fips: str, county_fips: str, tract_fips: str = None,
+                        block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
-    Fetches profession distribution with gender breakdown from Census ACS Subject Table S2401.
+    Fetches profession distribution with gender breakdown from Census ACS Detailed Table C24010 at block group level.
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/acs5/subject"
-    table_to_get = "S2401"
-    params = {"get": f"NAME,group({table_to_get})"}
+    base_url = f"https://api.census.gov/data/{year}/acs/acs5"
+    params = {"get": "NAME,group(C24010)"}
 
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    geo_level, params["in"] = ("County", f"state:{state_fips}")
-    if subdivision_fips and not force_county:
-        geo_level = "County Subdivision"
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        geo_level = "Block Group"
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        geo_level = "Census Tract"
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
+        geo_level = "County"
         params["for"] = f"county:{county_fips}"
+        params["in"] = f"state:{state_fips}"
 
     print(f"Fetching Profession/Gender data for {geo_level}...")
     try:
@@ -73,67 +99,72 @@ def get_profession_distribution(state_fips: str, county_fips: str, subdivision_f
     except requests.exceptions.RequestException as e:
         print(f"API Request failed: {e}")
         return pd.DataFrame()
+    
     df_full = pd.DataFrame([data[1]], columns=data[0])
-    profession_levels = ['Management, business, science, and arts occupations',
-                         'Service occupations',
-                         'Sales and office occupations',
-                         'Natural resources, construction, and maintenance occupations',
-                         'Production, transportation, and material moving occupations']
-    profession_levels_codes = [
-        "S2401_C01_002E",  # Management, business, science, and arts occupations
-        "S2401_C01_018E",  # Service occupations
-        "S2401_C01_026E",  # Sales and office occupations
-        "S2401_C01_029E",  # Natural resources, construction, and maintenance occupations
-        "S2401_C01_033E",  # Production, transportation, and material moving occupations
+    
+    # Profession categories from C24010 table - aggregated for meaningful analysis
+    profession_categories_mapping = [
+        ("Management, business, science, and arts occupations", {
+            "male": ["C24010_003E", "C24010_004E", "C24010_005E", "C24010_006E", "C24010_007E"],
+            "female": ["C24010_039E", "C24010_040E", "C24010_041E", "C24010_042E", "C24010_043E"]
+        }),
+        ("Service occupations", {
+            "male": ["C24010_008E", "C24010_009E", "C24010_010E", "C24010_011E"],
+            "female": ["C24010_044E", "C24010_045E", "C24010_046E", "C24010_047E"]
+        }),
+        ("Sales and office occupations", {
+            "male": ["C24010_012E", "C24010_013E"],
+            "female": ["C24010_048E", "C24010_049E"]
+        }),
+        ("Natural resources, construction, and maintenance occupations", {
+            "male": ["C24010_014E", "C24010_015E", "C24010_016E"],
+            "female": ["C24010_050E", "C24010_051E", "C24010_052E"]
+        }),
+        ("Production, transportation, and material moving occupations", {
+            "male": ["C24010_017E", "C24010_018E"],
+            "female": ["C24010_053E", "C24010_054E"]
+        })
     ]
 
-    # Codes for Male Population (C02)
-    profession_levels_codes_male = [
-        "S2401_C02_002E",
-        "S2401_C02_018E",
-        "S2401_C02_026E",
-        "S2401_C02_029E",
-        "S2401_C02_033E",
-    ]
-
-    # Codes for Female Population (C03)
-    profession_levels_codes_female = [
-        "S2401_C04_002E",
-        "S2401_C04_018E",
-        "S2401_C04_026E",
-        "S2401_C04_029E",
-        "S2401_C04_033E",
-    ]
-
-    total_population = int(df_full["S2401_C01_001E"].iloc[0])
-    print(f"Total population: {total_population}")
     records = []
-    for i, profession_level in enumerate(profession_levels):
-        total_code = profession_levels_codes[i]
-        male_code = profession_levels_codes_male[i]
-        female_code = profession_levels_codes_female[i]
+    for profession, gender_codes in profession_categories_mapping:
+        male_pop = 0
+        female_pop = 0
+        
+        # Sum male populations
+        for var_code in gender_codes["male"]:
+            if var_code in df_full.columns:
+                try:
+                    male_pop += int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError):
+                    pass  # Skip if data not available
+        
+        # Sum female populations  
+        for var_code in gender_codes["female"]:
+            if var_code in df_full.columns:
+                try:
+                    female_pop += int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError):
+                    pass  # Skip if data not available
+        
+        total_pop = male_pop + female_pop
+        total_working_pop = int(df_full["C24010_001E"].iloc[0]) if "C24010_001E" in df_full.columns else 1
+        percentage = (total_pop * 100.0 / total_working_pop) if total_working_pop > 0 else 0
+        
+        records.append({
+            "profession_level": profession,
+            "population": total_pop,
+            "male_population": male_pop,
+            "female_population": female_pop,
+            "percentage": percentage
+        })
+    
+    return pd.DataFrame(records)
 
-        if total_code in df_full.columns and male_code in df_full.columns and female_code in df_full.columns:
-            total_count = int(df_full[total_code].iloc[0])
-            male_count = int(df_full[male_code].iloc[0])
-            female_count = int(df_full[female_code].iloc[0])
 
-            percentage = (total_count * 100.0 / total_population) if total_population > 0 else 0
-
-            records.append({
-                "profession_level": profession_level,
-                "population": total_count,
-                "male_population": male_count,
-                "female_population": female_count,
-                "percentage": percentage
-            })
-    df = pd.DataFrame(records)
-    return df
-
-
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
-    Get profession distribution with gender breakdown for a location.
+    Get profession distribution with gender breakdown for a location at block group level.
     Returns profession distribution data and joint profession-gender data.
     """
     geo_info = get_geography(lat, lon)
@@ -142,7 +173,8 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
 
     df = get_profession_distribution(
         state_fips=geo_info["state_fips"], county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"], year=year, force_county=force_county
+        tract_fips=geo_info["tract_fips"], block_group_fips=geo_info["block_group_fips"], 
+        year=year, force_tract=force_tract
     )
     
     if df.empty:
@@ -202,8 +234,15 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "joint_data": joint_data,
         "profession_marginal": profession_marginal,
         "gender_marginal": gender_marginal,
-        "location": geo_info,
-        "data_source": f"Census ACS 5-Year Subject Table S2401 ({year})",
+        "location": {
+            "state_name": geo_info["state_name"],
+            "county_name": geo_info["county_name"],
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
+        },
+        "data_source": f"Census ACS 5-Year Detailed Table C24010 ({year})",
         "total_population": int(df["population"].sum())
     }
 

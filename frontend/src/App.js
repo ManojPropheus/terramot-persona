@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, useMapEvents, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, Marker, Popup, GeoJSON } from 'react-leaflet';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
@@ -7,6 +7,7 @@ import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import UnifiedDistributionSystem from './UnifiedDistributionSystem';
+import BivariateProbability from './BivariateProbability';
 
 let DefaultIcon = L.icon({
     iconUrl: icon,
@@ -21,10 +22,13 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 // --- Helper Components ---
 
-function MapClickHandler({ onMapClick }) {
+function MapEventHandler({ onMapClick, onMapHover }) {
   useMapEvents({
     click: (e) => {
       onMapClick(e.latlng);
+    },
+    mousemove: (e) => {
+      onMapHover(e.latlng);
     },
   });
   return null;
@@ -164,7 +168,7 @@ function AgeIncomeJointChart({ data, selectedLocation }) {
       paddingRight: '10px',
       paddingTop: '10px'
     }}>
-      <h3 className="chart-title" style={{ marginTop: '0', marginBottom: '20px' }}>Age-Income Joint Distribution</h3>
+      <h3 className="chart-title" style={{ marginTop: '0', marginBottom: '20px' }}>Age-Income distribution</h3>
 
       <div className="marginal-distributions" style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
         <div style={{ flex: 1 }}>
@@ -306,7 +310,7 @@ function AgeIncomeJointChart({ data, selectedLocation }) {
   );
 }
 
-function ChatBot({ selectedLocation, distributionData }) {
+function ChatBot({ selectedLocation, distributionData, locationName }) {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -591,7 +595,7 @@ function ChatBot({ selectedLocation, distributionData }) {
                 color: '#475569',
                 marginBottom: '16px'
               }}>
-                📍 Current location: {selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)}
+                📍 Current location: {locationName}
                 {distributionData && <div>✅ Distribution data loaded</div>}
               </div>
             )}
@@ -775,6 +779,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [geography, setGeography] = useState(null);
+  const [hoveredSubdivision, setHoveredSubdivision] = useState(null);
+  const [activeTab, setActiveTab] = useState('individual');
+
+  const handleMapHover = (latlng) => {
+    // Removed hover functionality to prevent excessive API calls
+    // Location info will only be shown when clicking on the map
+  };
 
   const handleMapClick = async (latlng) => {
     const { lat, lng } = latlng;
@@ -821,7 +832,7 @@ function App() {
   };
 
   const locationName = geography
-    ? (geography.subdivision_name || geography.county_name)
+    ? (geography.block_name || geography.block_group_name || geography.tract_name || geography.county_name)
     : '';
 
   return (
@@ -918,7 +929,9 @@ function App() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <MapClickHandler onMapClick={handleMapClick} />
+            <MapEventHandler onMapClick={handleMapClick} onMapHover={handleMapHover} />
+            
+            
             {selectedLocation && (
                 <Marker position={[selectedLocation.lat,selectedLocation.lng]}>
                   <Popup>
@@ -928,6 +941,27 @@ function App() {
                 </Marker>
             )}
           </MapContainer>
+
+          {/* Show subdivision name tooltip */}
+          {hoveredSubdivision && (
+            <div style={{
+              position: 'absolute',
+              top: '10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+              color: 'white',
+              padding: '8px 12px',
+              borderRadius: '4px',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              pointerEvents: 'none',
+              zIndex: 1000,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+            }}>
+              {hoveredSubdivision.name}
+            </div>
+          )}
 
           {loading && (
             <div style={{
@@ -998,49 +1032,98 @@ function App() {
           display: 'flex',
           flexDirection: 'column'
         }}>
-          {distributionData ? (
-            <div style={{
-              flex: 1,
-              overflowY: 'auto'
-            }}>
-              <UnifiedDistributionSystem 
-                distributionData={distributionData}
-                selectedLocation={selectedLocation}
-              />
-            </div>
-          ) : (
-            <div style={{
-              padding: '24px',
-              textAlign: 'center',
-              color: '#9ca3af',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              height: '100%'
-            }}>
-              <div style={{
-                fontSize: '16px',
-                fontWeight: '500',
-                marginBottom: '12px',
-                color: '#eef0f4'
-              }}>
-                Distribution Analytics
-              </div>
-              <p style={{
+          {/* Tab Headers */}
+          <div style={{
+            display: 'flex',
+            borderBottom: '1px solid #2a2e36',
+            backgroundColor: '#111827',
+            borderRadius: '12px 12px 0 0'
+          }}>
+            <button
+              onClick={() => setActiveTab('individual')}
+              style={{
+                flex: 1,
+                padding: '16px 20px',
+                backgroundColor: activeTab === 'individual' ? '#008a89' : 'transparent',
+                color: activeTab === 'individual' ? '#ffffff' : '#9ca3af',
+                border: 'none',
+                borderRadius: '12px 0 0 0',
                 fontSize: '14px',
-                marginBottom: '20px',
-                lineHeight: '1.5'
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Individual Distributions
+            </button>
+            <button
+              onClick={() => setActiveTab('bivariate')}
+              style={{
+                flex: 1,
+                padding: '16px 20px',
+                backgroundColor: activeTab === 'bivariate' ? '#008a89' : 'transparent',
+                color: activeTab === 'bivariate' ? '#ffffff' : '#9ca3af',
+                border: 'none',
+                borderRadius: '0 12px 0 0',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Bivariate Distributions
+            </button>
+          </div>
+
+          {/* Tab Content */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {distributionData ? (
+              activeTab === 'individual' ? (
+                <UnifiedDistributionSystem 
+                  distributionData={distributionData}
+                  selectedLocation={selectedLocation}
+                />
+              ) : (
+                <BivariateProbability 
+                  selectedLocation={selectedLocation}
+                  locationName={locationName}
+                />
+              )
+            ) : (
+              <div style={{
+                padding: '24px',
+                textAlign: 'center',
+                color: '#9ca3af',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                height: '100%'
               }}>
-                Select a location on the map to view demographic data
-              </p>
-            </div>
-          )}
+                <div style={{
+                  fontSize: '16px',
+                  fontWeight: '500',
+                  marginBottom: '12px',
+                  color: '#eef0f4'
+                }}>
+                  Distribution Analytics
+                </div>
+                <p style={{
+                  fontSize: '14px',
+                  marginBottom: '20px',
+                  lineHeight: '1.5'
+                }}>
+                  Select a location on the map to view demographic data
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <ChatBot 
         selectedLocation={selectedLocation} 
-        distributionData={distributionData} 
+        distributionData={distributionData}
+        locationName={locationName}
       />
     </div>
   );

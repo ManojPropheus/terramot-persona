@@ -16,7 +16,7 @@ CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 def get_geography(lat: float, lon: float) -> dict:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -32,42 +32,72 @@ def get_geography(lat: float, lon: float) -> dict:
 
     state = geogs["States"][0]
     county = geogs["Counties"][0]
-    subs = geogs.get("County Subdivisions", [])
     
-    if subs:
-        subdiv = subs[0]
-        subdiv_fips = subdiv["COUSUB"]
-        subdiv_name = subdiv["NAME"]
+    # Get Census Tract and Block information
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
+    
+    if tracts:
+        tract = tracts[0]
+        tract_fips = tract["TRACT"]
+        tract_name = tract["NAME"]
     else:
-        subdiv_fips = None
-        subdiv_name = None
+        tract_fips = None
+        tract_name = None
+        
+    if blocks:
+        block = blocks[0]
+        block_fips = block["BLOCK"]
+        block_name = block["NAME"]
+        block_geoid = block["GEOID"]
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
     return {
         "state_fips": state["STATE"],
         "state_name": state["NAME"],
         "county_fips": county["COUNTY"],
         "county_name": county["NAME"],
-        "subdivision_fips": subdiv_fips,
-        "subdivision_name": subdiv_name
+        "tract_fips": tract_fips,
+        "tract_name": tract_name,
+        "block_group_fips": block_group_fips,
+        "block_group_name": block_group_name,
+        "block_fips": block_fips,
+        "block_name": block_name,
+        "block_geoid": block_geoid
     }
 
 
-def get_age_data_from_census(state_fips: str, county_fips: str, subdivision_fips: str = None, 
-                            year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_age_data_from_census(state_fips: str, county_fips: str, tract_fips: str = None, 
+                            block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
-    Fetch age distribution from Census ACS Subject Table S0101.
+    Fetch age distribution from Census ACS Detailed Table B01001 at block group level.
     Pure Census data - no modifications.
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/acs5/subject"
-    params = {"get": "NAME,group(S0101)"}
+    base_url = f"https://api.census.gov/data/{year}/acs/acs5"
+    params = {"get": "NAME,group(B01001)"}
     
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    # Set geography
-    if subdivision_fips and not force_county:
-        print(f"Fetching age data for County Subdivision...")
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        print(f"Fetching age data for Block Group...")
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        print(f"Fetching age data for Census Tract...")
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
         print(f"Fetching age data for County...")
@@ -81,48 +111,53 @@ def get_age_data_from_census(state_fips: str, county_fips: str, subdivision_fips
     # Convert to DataFrame
     df_full = pd.DataFrame([data[1]], columns=data[0])
 
-    # Age groups and their corresponding variable codes in S0101
-    age_groups = [
-        "Under 5 years", "5 to 9 years", "10 to 14 years", "15 to 19 years",
-        "20 to 24 years", "25 to 29 years", "30 to 34 years", "35 to 39 years",
-        "40 to 44 years", "45 to 49 years", "50 to 54 years", "55 to 59 years",
-        "60 to 64 years", "65 to 69 years", "70 to 74 years", "75 to 79 years",
-        "80 to 84 years", "85 years and over"
-    ]
+    # Import standard age mapping from reference file
+    try:
+        from .standard_categories import B01001_AGE_MAPPING
+    except ImportError:
+        from standard_categories import B01001_AGE_MAPPING
+    
+    # Use standardized age ranges for consistency across all distributions
+    age_groups_mapping = [(age_range, [f"B01001_{code}E" for code in codes]) 
+                         for age_range, codes in B01001_AGE_MAPPING.items()]
     
     # Total population
-    total_population = int(df_full["S0101_C01_001E"].iloc[0])
+    total_population = int(df_full["B01001_001E"].iloc[0])
     
     # Extract age distribution data
     records = []
-    for idx, age_group in enumerate(age_groups):
-        var_code = f"S0101_C01_{idx+2:03d}E"  # Variables start from S0101_C01_002E
+    for age_group, var_codes in age_groups_mapping:
+        population = 0
+        for var_code in var_codes:
+            if var_code in df_full.columns:
+                try:
+                    population += int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError):
+                    pass  # Skip if data not available
         
-        if var_code in df_full.columns:
-            population = int(df_full[var_code].iloc[0])
-            percentage = (population * 100.0 / total_population) if total_population > 0 else 0
-            
-            records.append({
-                "age_group": age_group,
-                "population": population,
-                "percentage": percentage
-            })
+        percentage = (population * 100.0 / total_population) if total_population > 0 else 0
+        
+        records.append({
+            "age_group": age_group,
+            "population": population,
+            "percentage": percentage
+        })
 
     return pd.DataFrame(records)
 
 
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
-    Get age distribution for a location.
+    Get age distribution for a location at block group level.
     
     Args:
         lat: Latitude
         lon: Longitude
         year: ACS year (default 2023)
-        force_county: Use county data instead of subdivision (default False)
+        force_tract: Use tract data instead of block group (default False)
         
     Returns:
-        DataFrame with age groups, population counts, and percentages
+        Dict with age groups, population counts, and percentages
     """
     # Get geographic information
     geo_info = get_geography(lat, lon)
@@ -131,10 +166,27 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
     age_df = get_age_data_from_census(
         state_fips=geo_info["state_fips"],
         county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"],
+        tract_fips=geo_info["tract_fips"],
+        block_group_fips=geo_info["block_group_fips"],
         year=year,
-        force_county=force_county
+        force_tract=force_tract
     )
+    
+    # Sort age groups in chronological order
+    age_order = [
+        "Under 5 years", "5 to 9 years", "10 to 14 years", "15 to 19 years",
+        "20 to 24 years", "25 to 34 years", "35 to 44 years", "45 to 54 years",
+        "55 to 64 years", "65 to 74 years", "75 to 84 years", "85 years and over"
+    ]
+    
+    # Create mapping and handle any missing values
+    age_order_map = {v: i for i, v in enumerate(age_order)}
+    age_df['sort_order'] = age_df['age_group'].map(age_order_map)
+    
+    # Fill any NaN values (age groups not in our order list) with a high number to put them at the end
+    age_df['sort_order'] = age_df['sort_order'].fillna(999)
+    age_df = age_df.sort_values('sort_order').drop('sort_order', axis=1)
+    
     # Return as JSON-serializable dict
     return {
         "type": "age",
@@ -149,9 +201,12 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "location": {
             "state_name": geo_info["state_name"],
             "county_name": geo_info["county_name"],
-            "subdivision_name": geo_info["subdivision_name"]
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
         },
-        "data_source": "Census ACS Subject Table S0101"
+        "data_source": "Census ACS Detailed Table B01001"
     }
 
 

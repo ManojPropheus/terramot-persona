@@ -16,7 +16,7 @@ CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 def get_geography(lat: float, lon: float) -> dict:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -32,42 +32,72 @@ def get_geography(lat: float, lon: float) -> dict:
 
     state = geogs["States"][0]
     county = geogs["Counties"][0]
-    subs = geogs.get("County Subdivisions", [])
     
-    if subs:
-        subdiv = subs[0]
-        subdiv_fips = subdiv["COUSUB"]
-        subdiv_name = subdiv["NAME"]
+    # Get Census Tract and Block information
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
+    
+    if tracts:
+        tract = tracts[0]
+        tract_fips = tract["TRACT"]
+        tract_name = tract["NAME"]
     else:
-        subdiv_fips = None
-        subdiv_name = None
+        tract_fips = None
+        tract_name = None
+    
+    if blocks:
+        block = blocks[0]
+        block_fips = block["BLOCK"]
+        block_name = block["NAME"]
+        block_geoid = block["GEOID"]
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
     return {
         "state_fips": state["STATE"],
         "state_name": state["NAME"],
         "county_fips": county["COUNTY"],
         "county_name": county["NAME"],
-        "subdivision_fips": subdiv_fips,
-        "subdivision_name": subdiv_name
+        "tract_fips": tract_fips,
+        "tract_name": tract_name,
+        "block_group_fips": block_group_fips,
+        "block_group_name": block_group_name,
+        "block_fips": block_fips,
+        "block_name": block_name,
+        "block_geoid": block_geoid
     }
 
 
-def get_income_data_from_census(state_fips: str, county_fips: str, subdivision_fips: str = None, 
-                               year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_income_data_from_census(state_fips: str, county_fips: str, tract_fips: str = None, 
+                               block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
-    Fetch household income distribution from Census ACS Subject Table S1901.
+    Fetch household income distribution from Census ACS Detailed Table B19001 at block group level.
     Pure Census data - no modifications.
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/acs5/subject"
-    params = {"get": "NAME,group(S1901)"}
+    base_url = f"https://api.census.gov/data/{year}/acs/acs5"
+    params = {"get": "NAME,group(B19001)"}
     
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    # Set geography
-    if subdivision_fips and not force_county:
-        print(f"Fetching income data for County Subdivision...")
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        print(f"Fetching income data for Block Group...")
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        print(f"Fetching income data for Census Tract...")
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
         print(f"Fetching income data for County...")
@@ -81,70 +111,63 @@ def get_income_data_from_census(state_fips: str, county_fips: str, subdivision_f
     # Convert to DataFrame
     df_full = pd.DataFrame([data[1]], columns=data[0])
 
-    # Income ranges and their corresponding variable codes in S1901
-    income_ranges = [
-        "Less than $10,000",
-        "$10,000 to $14,999", 
-        "$15,000 to $24,999",
-        "$25,000 to $34,999",
-        "$35,000 to $49,999",
-        "$50,000 to $74,999",
-        "$75,000 to $99,999",
-        "$100,000 to $149,999",
-        "$150,000 to $199,999",
-        "$200,000 or more"
-    ]
-    
-    # Variable codes for household income distribution in S1901
-    income_var_codes = [
-        "S1901_C01_002E",  # Less than $10,000
-        "S1901_C01_003E",  # $10,000 to $14,999
-        "S1901_C01_004E",  # $15,000 to $24,999
-        "S1901_C01_005E",  # $25,000 to $34,999
-        "S1901_C01_006E",  # $35,000 to $49,999
-        "S1901_C01_007E",  # $50,000 to $74,999
-        "S1901_C01_008E",  # $75,000 to $99,999
-        "S1901_C01_009E",  # $100,000 to $149,999
-        "S1901_C01_010E",  # $150,000 to $199,999
-        "S1901_C01_011E"   # $200,000 or more
+    # Income ranges from B19001 table
+    income_ranges_mapping = [
+        ("Less than $10,000", ["B19001_002E"]),
+        ("$10,000 to $14,999", ["B19001_003E"]),
+        ("$15,000 to $19,999", ["B19001_004E"]),
+        ("$20,000 to $24,999", ["B19001_005E"]),
+        ("$25,000 to $29,999", ["B19001_006E"]),
+        ("$30,000 to $34,999", ["B19001_007E"]),
+        ("$35,000 to $39,999", ["B19001_008E"]),
+        ("$40,000 to $44,999", ["B19001_009E"]),
+        ("$45,000 to $49,999", ["B19001_010E"]),
+        ("$50,000 to $59,999", ["B19001_011E"]),
+        ("$60,000 to $74,999", ["B19001_012E"]),
+        ("$75,000 to $99,999", ["B19001_013E"]),
+        ("$100,000 to $124,999", ["B19001_014E"]),
+        ("$125,000 to $149,999", ["B19001_015E"]),
+        ("$150,000 to $199,999", ["B19001_016E"]),
+        ("$200,000 or more", ["B19001_017E"])
     ]
     
     # Total households
-    total_households = int(df_full["S1901_C01_001E"].iloc[0])
+    total_households = int(df_full["B19001_001E"].iloc[0])
     
     # Extract income distribution data
     records = []
-    for income_range, var_code in zip(income_ranges, income_var_codes):
-        if var_code in df_full.columns:
-            try:
-                # S1901 table contains percentages, not counts
-                percentage = float(df_full[var_code].iloc[0])
-                households = int((percentage * total_households) / 100.0)
-                
-                records.append({
-                    "income_range": income_range,
-                    "households": households,
-                    "percentage": percentage
-                })
-            except (ValueError, TypeError):
-                # Skip if data is not available
-                pass
+    for income_range, var_codes in income_ranges_mapping:
+        households = 0
+        for var_code in var_codes:
+            if var_code in df_full.columns:
+                try:
+                    households += int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError):
+                    pass  # Skip if data not available
+        
+        percentage = (households * 100.0 / total_households) if total_households > 0 else 0
+        
+        records.append({
+            "income_range": income_range,
+            "households": households,
+            "percentage": percentage
+        })
 
     return pd.DataFrame(records)
 
 
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
-    Get household income distribution for a location.
+    Get household income distribution for a location at block group level.
     
     Args:
         lat: Latitude
         lon: Longitude
         year: ACS year (default 2023)
-        force_county: Use county data instead of subdivision (default False)
+        force_tract: Use tract data instead of block group (default False)
         
     Returns:
-        DataFrame with income ranges, household counts, and percentages
+        Dict with income ranges, household counts, and percentages
     """
     # Get geographic information
     geo_info = get_geography(lat, lon)
@@ -153,9 +176,10 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
     income_df = get_income_data_from_census(
         state_fips=geo_info["state_fips"],
         county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"],
+        tract_fips=geo_info["tract_fips"],
+        block_group_fips=geo_info["block_group_fips"],
         year=year,
-        force_county=force_county
+        force_tract=force_tract
     )
     
     # Return as JSON-serializable dict
@@ -172,9 +196,12 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "location": {
             "state_name": geo_info["state_name"],
             "county_name": geo_info["county_name"],
-            "subdivision_name": geo_info["subdivision_name"]
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
         },
-        "data_source": "Census ACS Subject Table S1901"
+        "data_source": "Census ACS Detailed Table B19001"
     }
 
 

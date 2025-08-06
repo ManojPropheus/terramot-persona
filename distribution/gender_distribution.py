@@ -16,7 +16,7 @@ CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 def get_geography(lat: float, lon: float) -> dict:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -32,42 +32,72 @@ def get_geography(lat: float, lon: float) -> dict:
 
     state = geogs["States"][0]
     county = geogs["Counties"][0]
-    subs = geogs.get("County Subdivisions", [])
     
-    if subs:
-        subdiv = subs[0]
-        subdiv_fips = subdiv["COUSUB"]
-        subdiv_name = subdiv["NAME"]
+    # Get Census Tract and Block information
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
+    
+    if tracts:
+        tract = tracts[0]
+        tract_fips = tract["TRACT"]
+        tract_name = tract["NAME"]
     else:
-        subdiv_fips = None
-        subdiv_name = None
+        tract_fips = None
+        tract_name = None
+    
+    if blocks:
+        block = blocks[0]
+        block_fips = block["BLOCK"]
+        block_name = block["NAME"]
+        block_geoid = block["GEOID"]
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
     return {
         "state_fips": state["STATE"],
         "state_name": state["NAME"],
         "county_fips": county["COUNTY"],
         "county_name": county["NAME"],
-        "subdivision_fips": subdiv_fips,
-        "subdivision_name": subdiv_name
+        "tract_fips": tract_fips,
+        "tract_name": tract_name,
+        "block_group_fips": block_group_fips,
+        "block_group_name": block_group_name,
+        "block_fips": block_fips,
+        "block_name": block_name,
+        "block_geoid": block_geoid
     }
 
 
-def get_gender_data_from_census(state_fips: str, county_fips: str, subdivision_fips: str = None, 
-                               year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_gender_data_from_census(state_fips: str, county_fips: str, tract_fips: str = None, 
+                               block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
-    Fetch gender distribution from Census ACS Subject Table S0101.
+    Fetch gender distribution from Census ACS Detailed Table B01001 at block group level.
     Pure Census data - no modifications.
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/acs5/subject"
-    params = {"get": "NAME,S0101_C01_001E,S0101_C03_001E,S0101_C05_001E"}
+    base_url = f"https://api.census.gov/data/{year}/acs/acs5"
+    params = {"get": "NAME,B01001_001E,B01001_002E,B01001_026E"}
     
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    # Set geography
-    if subdivision_fips and not force_county:
-        print(f"Fetching gender data for County Subdivision...")
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        print(f"Fetching gender data for Block Group...")
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        print(f"Fetching gender data for Census Tract...")
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
         print(f"Fetching gender data for County...")
@@ -81,10 +111,10 @@ def get_gender_data_from_census(state_fips: str, county_fips: str, subdivision_f
     # Convert to DataFrame
     df_full = pd.DataFrame([data[1]], columns=data[0])
 
-    # Extract gender data
-    total_population = int(df_full["S0101_C01_001E"].iloc[0])
-    male_population = int(df_full["S0101_C03_001E"].iloc[0])
-    female_population = int(df_full["S0101_C05_001E"].iloc[0])
+    # Extract gender data from B01001
+    total_population = int(df_full["B01001_001E"].iloc[0])
+    male_population = int(df_full["B01001_002E"].iloc[0])
+    female_population = int(df_full["B01001_026E"].iloc[0])
     
     # Calculate percentages
     male_percentage = (male_population * 100.0 / total_population) if total_population > 0 else 0
@@ -111,18 +141,18 @@ def get_gender_data_from_census(state_fips: str, county_fips: str, subdivision_f
     return pd.DataFrame(records)
 
 
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
-    Get gender distribution for a location.
+    Get gender distribution for a location at block group level.
     
     Args:
         lat: Latitude
         lon: Longitude
         year: ACS year (default 2023)
-        force_county: Use county data instead of subdivision (default False)
+        force_tract: Use tract data instead of block group (default False)
         
     Returns:
-        DataFrame with gender, population counts, and percentages
+        Dict with gender, population counts, and percentages
     """
     # Get geographic information
     geo_info = get_geography(lat, lon)
@@ -131,9 +161,10 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
     gender_df = get_gender_data_from_census(
         state_fips=geo_info["state_fips"],
         county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"],
+        tract_fips=geo_info["tract_fips"],
+        block_group_fips=geo_info["block_group_fips"],
         year=year,
-        force_county=force_county
+        force_tract=force_tract
     )
     
     # Filter out 'Total' for API response
@@ -153,9 +184,12 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "location": {
             "state_name": geo_info["state_name"],
             "county_name": geo_info["county_name"],
-            "subdivision_name": geo_info["subdivision_name"]
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
         },
-        "data_source": "Census ACS Subject Table S0101"
+        "data_source": "Census ACS Detailed Table B01001"
     }
 
 

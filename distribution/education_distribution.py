@@ -14,9 +14,9 @@ import numpy as np
 CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
 
 
-def get_geography(lat: float, lon: float) -> dict:
+def get_geography(lat: float, lon: float) -> dict | None:
     """
-    Get geographic information (state, county, subdivision) from coordinates.
+    Get geographic information (state, county, tract, block group, block) from coordinates.
     """
     url = "https://geocoding.geo.census.gov/geocoder/geographies/coordinates"
     params = {
@@ -26,48 +26,92 @@ def get_geography(lat: float, lon: float) -> dict:
         "vintage": "Census2020_Census2020",
         "format": "json"
     }
+
     resp = requests.get(url, params=params)
     resp.raise_for_status()
     geogs = resp.json()["result"]["geographies"]
 
     state = geogs["States"][0]
     county = geogs["Counties"][0]
-    subs = geogs.get("County Subdivisions", [])
     
-    if subs:
-        subdiv = subs[0]
-        subdiv_fips = subdiv["COUSUB"]
-        subdiv_name = subdiv["NAME"]
+    # Get Census Tract and Block information
+    tracts = geogs.get("Census Tracts", [])
+    blocks = geogs.get("Census Blocks", [])
+    
+    if tracts:
+        tract = tracts[0]
+        tract_fips = tract["TRACT"]
+        tract_name = tract["NAME"]
     else:
-        subdiv_fips = None
-        subdiv_name = None
+        tract_fips = None
+        tract_name = None
+    
+    if blocks:
+        block = blocks[0]
+        block_fips = block["BLOCK"]
+        block_name = block["NAME"]
+        block_geoid = block["GEOID"]
+        # Extract block group info from the block data
+        block_group_fips = block.get("BLKGRP")
+        if block_group_fips:
+            block_group_name = f"Block Group {block_group_fips}"
+        else:
+            block_group_name = None
+    else:
+        block_fips = None
+        block_name = None
+        block_geoid = None
+        block_group_fips = None
+        block_group_name = None
 
+    print({
+        "state_fips": state["STATE"],
+        "state_name": state["NAME"],
+        "county_fips": county["COUNTY"],
+        "county_name": county["NAME"],
+        "tract_fips": tract_fips,
+        "tract_name": tract_name,
+        "block_group_fips": block_group_fips,
+        "block_group_name": block_group_name,
+        "block_fips": block_fips,
+        "block_name": block_name,
+        "block_geoid": block_geoid
+    })
     return {
         "state_fips": state["STATE"],
         "state_name": state["NAME"],
         "county_fips": county["COUNTY"],
         "county_name": county["NAME"],
-        "subdivision_fips": subdiv_fips,
-        "subdivision_name": subdiv_name
+        "tract_fips": tract_fips,
+        "tract_name": tract_name,
+        "block_group_fips": block_group_fips,
+        "block_group_name": block_group_name,
+        "block_fips": block_fips,
+        "block_name": block_name,
+        "block_geoid": block_geoid
     }
 
 
-def get_education_data_from_census(state_fips: str, county_fips: str, subdivision_fips: str = None, 
-                                  year: int = 2023, force_county: bool = False) -> pd.DataFrame:
+def get_education_data_from_census(state_fips: str, county_fips: str, tract_fips: str = None, 
+                                  block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
-    Fetch educational attainment distribution from Census ACS Subject Table S1501.
+    Fetch educational attainment distribution from Census ACS Detailed Table B15003 at block group level.
     Pure Census data - no modifications.
     """
-    base_url = f"https://api.census.gov/data/{year}/acs/acs5/subject"
-    params = {"get": "NAME,group(S1501)"}
+    base_url = f"https://api.census.gov/data/{year}/acs/acs5"
+    params = {"get": "NAME,group(B15003)"}
     
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    # Set geography
-    if subdivision_fips and not force_county:
-        print(f"Fetching education data for County Subdivision...")
-        params["for"] = f"county subdivision:{subdivision_fips}"
+    # Set geography - prefer block group level
+    if block_group_fips and tract_fips and not force_tract:
+        print(f"Fetching education data for Block Group...")
+        params["for"] = f"block group:{block_group_fips}"
+        params["in"] = f"state:{state_fips} county:{county_fips} tract:{tract_fips}"
+    elif tract_fips:
+        print(f"Fetching education data for Census Tract...")
+        params["for"] = f"tract:{tract_fips}"
         params["in"] = f"state:{state_fips} county:{county_fips}"
     else:
         print(f"Fetching education data for County...")
@@ -81,59 +125,54 @@ def get_education_data_from_census(state_fips: str, county_fips: str, subdivisio
     # Convert to DataFrame
     df_full = pd.DataFrame([data[1]], columns=data[0])
 
-    # Education levels and their corresponding variable codes in S1501
-    education_levels = [
-        "Less than 9th grade",
-        "9th to 12th grade, no diploma", 
-        "High school graduate (includes equivalency)",
-        "Some college, no degree",
-        "Associate's degree",
-        "Bachelor's degree",
-        "Graduate or professional degree"
-    ]
-    
-    # Variable codes for educational attainment in S1501 (population 25 years and over)
-    education_var_codes = [
-        "S1501_C01_007E",  # Less than 9th grade
-        "S1501_C01_008E",  # 9th to 12th grade, no diploma
-        "S1501_C01_009E",  # High school graduate
-        "S1501_C01_010E",  # Some college, no degree
-        "S1501_C01_011E",  # Associate's degree
-        "S1501_C01_012E",  # Bachelor's degree
-        "S1501_C01_013E"   # Graduate or professional degree
+    # Education levels from B15003 table - aggregated for meaningful analysis
+    education_levels_mapping = [
+        ("Less than 9th grade", ["B15003_002E", "B15003_003E", "B15003_004E", "B15003_005E", "B15003_006E", "B15003_007E", "B15003_008E", "B15003_009E"]),
+        ("9th to 12th grade, no diploma", ["B15003_010E", "B15003_011E", "B15003_012E", "B15003_013E", "B15003_014E", "B15003_015E"]),
+        ("High school graduate (includes equivalency)", ["B15003_016E", "B15003_017E"]),
+        ("Some college, no degree", ["B15003_018E", "B15003_019E", "B15003_020E"]),
+        ("Associate's degree", ["B15003_021E"]),
+        ("Bachelor's degree", ["B15003_022E"]),
+        ("Graduate or professional degree", ["B15003_023E", "B15003_024E", "B15003_025E"])
     ]
     
     # Total population 25 years and over
-    total_population = int(df_full["S1501_C01_006E"].iloc[0])
+    total_population = int(df_full["B15003_001E"].iloc[0])
     
     # Extract education distribution data
     records = []
-    for education_level, var_code in zip(education_levels, education_var_codes):
-        if var_code in df_full.columns:
-            population = int(df_full[var_code].iloc[0])
-            percentage = (population * 100.0 / total_population) if total_population > 0 else 0
-            
-            records.append({
-                "education_level": education_level,
-                "population": population,
-                "percentage": percentage
-            })
+    for education_level, var_codes in education_levels_mapping:
+        population = 0
+        for var_code in var_codes:
+            if var_code in df_full.columns:
+                try:
+                    population += int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError):
+                    pass  # Skip if data not available
+        
+        percentage = (population * 100.0 / total_population) if total_population > 0 else 0
+        
+        records.append({
+            "education_level": education_level,
+            "population": population,
+            "percentage": percentage
+        })
 
     return pd.DataFrame(records)
 
 
-def get_distribution(lat: float, lon: float, year: int = 2023, force_county: bool = False) -> dict:
+def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool = False) -> dict:
     """
-    Get educational attainment distribution for a location.
+    Get educational attainment distribution for a location at block group level.
     
     Args:
         lat: Latitude
         lon: Longitude
         year: ACS year (default 2023)
-        force_county: Use county data instead of subdivision (default False)
+        force_tract: Use tract data instead of block group (default False)
         
     Returns:
-        DataFrame with education levels, population counts, and percentages
+        Dict with education levels, population counts, and percentages
     """
     # Get geographic information
     geo_info = get_geography(lat, lon)
@@ -142,9 +181,10 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
     education_df = get_education_data_from_census(
         state_fips=geo_info["state_fips"],
         county_fips=geo_info["county_fips"],
-        subdivision_fips=geo_info["subdivision_fips"],
+        tract_fips=geo_info["tract_fips"],
+        block_group_fips=geo_info["block_group_fips"],
         year=year,
-        force_county=force_county
+        force_tract=force_tract
     )
     
     # Return as JSON-serializable dict
@@ -161,9 +201,12 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_county: boo
         "location": {
             "state_name": geo_info["state_name"],
             "county_name": geo_info["county_name"],
-            "subdivision_name": geo_info["subdivision_name"]
+            "tract_name": geo_info["tract_name"],
+            "block_group_name": geo_info["block_group_name"],
+            "block_name": geo_info["block_name"],
+            "block_geoid": geo_info["block_geoid"]
         },
-        "data_source": "Census ACS Subject Table S1501"
+        "data_source": "Census ACS Detailed Table B15003"
     }
 
 
@@ -257,7 +300,7 @@ if __name__ == "__main__":
     print("EDUCATION DISTRIBUTION TEST")
     print("=" * 60)
     
-    df = education_distribution(lat, lon)
+    df = get_distribution(lat, lon)
     
     location = df["subdivision_name"].iloc[0] or df["county_name"].iloc[0]
     state = df["state_name"].iloc[0]
