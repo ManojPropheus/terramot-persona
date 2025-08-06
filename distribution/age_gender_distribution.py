@@ -228,11 +228,12 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool
     gender_marginal = result_data["gender_marginal"]
     total_population = result_data["total_population"]
 
-    return {
+    # Create initial distribution data with consistent field names
+    initial_data = {
         "type": "age_gender_joint",
         "joint_data": [
             {
-                "age": item["age"],
+                "age_range": item["age"],  # Standardize to age_range
                 "gender": item["gender"],
                 "population": int(item["population"]),
                 "percentage": float(item["percentage"])
@@ -266,6 +267,8 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool
         "data_source": "Census ACS Detailed Table B01001",
         "total_population": int(total_population)
     }
+    
+    return initial_data
 
 
 def get_conditional_distribution(joint_data: dict, condition_type: str, condition_value: str) -> dict:
@@ -286,26 +289,10 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
     joint_df = pd.DataFrame(joint_data['joint_data'])
     
     if condition_type == 'age':
-        # Map frontend age range to backend age range if needed
-        from .age_range_mapper import map_frontend_age_to_backend
-        
-        backend_age_range = map_frontend_age_to_backend(condition_value, 'age_gender')
-        if backend_age_range is None:
-            # Try using the condition_value directly (might already be a backend range)
-            backend_age_range = condition_value
-        
         # Given age range, return gender distribution
-        filtered_data = joint_df[joint_df['age'] == backend_age_range]
+        filtered_data = joint_df[joint_df['age_range'] == condition_value]
         if filtered_data.empty:
-            # Check if this is a valid frontend age range that maps to a backend range
-            from .age_range_mapper import get_available_frontend_ages, get_backend_age_ranges
-            available_frontend = get_available_frontend_ages('age_gender')
-            available_backend = get_backend_age_ranges('age_gender')
-            
-            if condition_value in available_frontend:
-                return {"error": f"Data not available for age range '{condition_value}'. This age range maps to '{backend_age_range}' but no data found for that range."}
-            else:
-                return {"error": f"Age range '{condition_value}' not supported for age-gender data. Available age ranges: {', '.join(available_backend)}"}
+            return {"error": f"No data found for age range: {condition_value}"}
         
         total_population = filtered_data['population'].sum()
         
@@ -318,14 +305,9 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
             for _, row in filtered_data.iterrows()
         ]
         
-        # Use original condition_value in the display
-        condition_display = condition_value
-        if backend_age_range != condition_value:
-            condition_display = f"{condition_value} (grouped as {backend_age_range})"
-        
         return {
             "type": "conditional_gender_given_age",
-            "condition": f"Age: {condition_display}",
+            "condition": f"Age: {condition_value}",
             "data": result,
             "total_population": int(total_population),
             "data_source": joint_data["data_source"]
@@ -341,7 +323,7 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
         
         result = [
             {
-                "category": row["age"],
+                "category": row["age_range"],
                 "value": int(row["population"]),
                 "percentage": float((row["population"] / total_population) * 100) if total_population > 0 else 0
             }

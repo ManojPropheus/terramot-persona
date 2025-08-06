@@ -6,8 +6,9 @@ import './App.css';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-import UnifiedDistributionSystem from './UnifiedDistributionSystem';
 import BivariateProbability from './BivariateProbability';
+import IndividualDistributions from './IndividualDistributions';
+import UnifiedDemographicAnalysis from './UnifiedDemographicAnalysis';
 
 let DefaultIcon = L.icon({
     iconUrl: icon,
@@ -108,7 +109,7 @@ function AgeIncomeJointChart({ data, selectedLocation }) {
 
   const sortedAgeData = useMemo(() => {
     if (!data?.age_marginal) return [];
-    const ageOrder = ["Under 25 years", "25 to 44 years", "45 to 64 years", "65 years and over"];
+    const ageOrder = ["18 to 24 years", "25 to 34 years", "35 to 44 years", "45 to 64 years", "65 years and over"];
     return [...data.age_marginal].sort((a, b) => ageOrder.indexOf(a.category) - ageOrder.indexOf(b.category));
   }, [data?.age_marginal]);
 
@@ -127,7 +128,16 @@ function AgeIncomeJointChart({ data, selectedLocation }) {
 
   if (!data) return null;
 
-  const ageOptions = data.age_marginal?.map(item => item.category) || [];
+  // Use unified age brackets for consistency across all joint distributions
+  const UNIFIED_AGE_BRACKETS = [
+    "18 to 24 years",
+    "25 to 34 years", 
+    "35 to 44 years",
+    "45 to 64 years",
+    "65 years and over"
+  ];
+  
+  const ageOptions = UNIFIED_AGE_BRACKETS;
   const incomeOptions = data.income_marginal?.map(item => item.category) || [];
 
   const handleGetConditional = async () => {
@@ -1073,7 +1083,6 @@ function App() {
                 backgroundColor: activeTab === 'bivariate' ? '#008a89' : 'transparent',
                 color: activeTab === 'bivariate' ? '#ffffff' : '#9ca3af',
                 border: 'none',
-                borderRadius: '0 12px 0 0',
                 fontSize: '14px',
                 fontWeight: '600',
                 cursor: 'pointer',
@@ -1082,49 +1091,62 @@ function App() {
             >
               Bivariate Distributions
             </button>
+            <button
+              onClick={() => setActiveTab('unified_analysis')}
+              style={{
+                flex: 1,
+                padding: '16px 20px',
+                backgroundColor: activeTab === 'unified_analysis' ? '#008a89' : 'transparent',
+                color: activeTab === 'unified_analysis' ? '#ffffff' : '#9ca3af',
+                border: 'none',
+                borderRadius: '0 12px 0 0',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Unified Analysis
+            </button>
           </div>
 
           {/* Tab Content */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {distributionData ? (
-              activeTab === 'individual' ? (
-                <UnifiedDistributionSystem 
+            {activeTab === 'individual' ? (
+              distributionData ? (
+                <IndividualDistributions 
                   distributionData={distributionData}
                   selectedLocation={selectedLocation}
                 />
               ) : (
-                <BivariateProbability 
-                  selectedLocation={selectedLocation}
-                  locationName={locationName}
-                />
-              )
-            ) : (
-              <div style={{
-                padding: '24px',
-                textAlign: 'center',
-                color: '#9ca3af',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                height: '100%'
-              }}>
                 <div style={{
-                  fontSize: '16px',
-                  fontWeight: '500',
-                  marginBottom: '12px',
-                  color: '#eef0f4'
+                  padding: '24px',
+                  textAlign: 'center',
+                  color: '#9ca3af',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  height: '100%'
                 }}>
-                  Distribution Analytics
+                  <h2 style={{ fontSize: '18px', marginBottom: '8px' }}>
+                    Select a Location
+                  </h2>
+                  <p style={{ fontSize: '14px' }}>
+                    Click on the map to view individual demographic distributions
+                  </p>
                 </div>
-                <p style={{
-                  fontSize: '14px',
-                  marginBottom: '20px',
-                  lineHeight: '1.5'
-                }}>
-                  Select a location on the map to view demographic data
-                </p>
-              </div>
-            )}
+              )
+            ) : activeTab === 'bivariate' ? (
+              <BivariateProbability 
+                selectedLocation={selectedLocation}
+                locationName={locationName}
+              />
+            ) : activeTab === 'unified_analysis' ? (
+              <UnifiedDemographicAnalysis 
+                selectedLocation={selectedLocation}
+                locationName={locationName}
+              />
+            ) : null}
           </div>
         </div>
       </div>

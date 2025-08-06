@@ -1,15 +1,12 @@
 """
 Age & Income Joint Distribution from Census Data
 Fetches joint distribution from Census Table B19037 and provides conditional distributions.
-Allows conditioning on either age or income brackets to view corresponding distributions.
+Table B19037: "Age of Householder by Household Income in the Past 12 Months (in 2023 Inflation-Adjusted Dollars)"
 """
 
 import os
 import requests
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
 # Census API key
 CENSUS_API_KEY = 'f5fddae34f7f6adf93a768ac2589c032d3e2e0cf'
@@ -44,7 +41,6 @@ def get_geography(lat: float, lon: float) -> dict:
         block_fips = block.get("BLOCK")
         block_name = block.get("NAME")
         block_geoid = block.get("GEOID")
-        # Extract block group info from the block data
         block_group_fips = block.get("BLKGRP")
         if block_group_fips:
             block_group_name = f"Block Group {block_group_fips}"
@@ -67,7 +63,7 @@ def get_geography(lat: float, lon: float) -> dict:
 
 
 def get_age_income_data(state_fips: str, county_fips: str, tract_fips: str = None,
-                        block_group_fips: str = None, year: int = 2023, force_tract: bool = False)-> pd.DataFrame:
+                        block_group_fips: str = None, year: int = 2023, force_tract: bool = False) -> pd.DataFrame:
     """
     Fetches joint age-income distribution from Census ACS Detailed Table B19037.
     """
@@ -106,26 +102,44 @@ def get_age_income_data(state_fips: str, county_fips: str, tract_fips: str = Non
 
     df_full = pd.DataFrame(data[1:], columns=data[0])
 
-    age_ranges = ['Under 25 years', '25 to 44 years', '45 to 64 years', '65 years and over']
+    # Age ranges exactly as they appear in B19037
+    age_ranges = [
+        'Householder under 25 years',
+        'Householder 25 to 44 years', 
+        'Householder 45 to 64 years',
+        'Householder 65 years and over'
+    ]
+    
+    # Income ranges exactly as they appear in B19037 
     income_ranges = [
         "Less than $10,000", "$10,000 to $14,999", "$15,000 to $19,999",
-        "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999",
+        "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999", 
         "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
         "$50,000 to $59,999", "$60,000 to $74,999", "$75,000 to $99,999",
         "$100,000 to $124,999", "$125,000 to $149,999",
         "$150,000 to $199,999", "$200,000 or more"
     ]
 
+    # B19037 Variable mapping based on actual Census structure:
+    # B19037_003E to B19037_018E: Under 25 years (16 income brackets)
+    # B19037_020E to B19037_035E: 25 to 44 years (16 income brackets) 
+    # B19037_037E to B19037_052E: 45 to 64 years (16 income brackets)
+    # B19037_054E to B19037_069E: 65 years and over (16 income brackets)
+    
+    age_start_vars = [3, 20, 37, 54]  # Starting variable numbers for each age group
+    
     records = []
-    var_start_index = 3
     for i_age, age_range in enumerate(age_ranges):
+        start_var = age_start_vars[i_age]
         for i_income, income_range in enumerate(income_ranges):
-            var_num = var_start_index + (i_age * 17) + i_income
+            var_num = start_var + i_income
             var_code = f"{table_to_get}_{str(var_num).zfill(3)}E"
             count = 0
             if var_code in df_full.columns:
-                try: count = int(df_full[var_code].iloc[0])
-                except (ValueError, TypeError): pass
+                try: 
+                    count = int(df_full[var_code].iloc[0])
+                except (ValueError, TypeError): 
+                    count = 0
             records.append({"age_range": age_range, "income_range": income_range, "households": count})
 
     return pd.DataFrame(records)
@@ -154,14 +168,21 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool
     age_marginal = df.groupby('age_range')['households'].sum().reset_index()
     income_marginal = df.groupby('income_range')['households'].sum().reset_index()
     
-    # Sort marginals in ascending order
-    age_order = ["Under 25 years", "25 to 44 years", "45 to 64 years", "65 years and over"]
-    income_order = ["Less than $10,000", "$10,000 to $14,999", "$15,000 to $19,999",
-                   "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999", 
-                   "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
-                   "$50,000 to $59,999", "$60,000 to $74,999", "$75,000 to $99,999",
-                   "$100,000 to $124,999", "$125,000 to $149,999", "$150,000 to $199,999",
-                   "$200,000 or more"]
+    # Sort marginals in the correct order
+    age_order = [
+        'Householder under 25 years',
+        'Householder 25 to 44 years', 
+        'Householder 45 to 64 years',
+        'Householder 65 years and over'
+    ]
+    income_order = [
+        "Less than $10,000", "$10,000 to $14,999", "$15,000 to $19,999",
+        "$20,000 to $24,999", "$25,000 to $29,999", "$30,000 to $34,999", 
+        "$35,000 to $39,999", "$40,000 to $44,999", "$45,000 to $49,999",
+        "$50,000 to $59,999", "$60,000 to $74,999", "$75,000 to $99,999",
+        "$100,000 to $124,999", "$125,000 to $149,999",
+        "$150,000 to $199,999", "$200,000 or more"
+    ]
     
     age_marginal['sort_order'] = age_marginal['age_range'].map({v: i for i, v in enumerate(age_order)})
     age_marginal = age_marginal.sort_values('sort_order').drop('sort_order', axis=1)
@@ -182,7 +203,7 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool
                 "age_range": row["age_range"],
                 "income_range": row["income_range"],
                 "households": int(row["households"]),
-                "percentage": float((row["households"] / total_households) * 100)
+                "percentage": float((row["households"] / total_households) * 100) if total_households > 0 else 0
             }
             for _, row in df.iterrows()
         ],
@@ -210,13 +231,13 @@ def get_distribution(lat: float, lon: float, year: int = 2023, force_tract: bool
             "block_name": geo_info["block_name"],
             "block_geoid": geo_info["block_geoid"]
         },
-        "data_source": "Census ACS Detailed Table B19037"
+        "data_source": "Census ACS Detailed Table B19037: Age of Householder by Household Income in the Past 12 Months (in 2023 Inflation-Adjusted Dollars)"
     }
 
 
 def get_conditional_distribution(joint_data: dict, condition_type: str, condition_value: str) -> dict:
     """
-    Get conditional distribution from joint data with age range mapping support.
+    Get conditional distribution from joint data.
     
     Args:
         joint_data: Result from get_distribution()
@@ -232,26 +253,10 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
     joint_df = pd.DataFrame(joint_data['joint_data'])
     
     if condition_type == 'age':
-        # Map frontend age range to backend age range if needed
-        from .age_range_mapper import map_frontend_age_to_backend
-        
-        backend_age_range = map_frontend_age_to_backend(condition_value, 'age_income')
-        if backend_age_range is None:
-            # Try using the condition_value directly (might already be a backend range)
-            backend_age_range = condition_value
-        
         # Given age range, return income distribution
-        filtered_data = joint_df[joint_df['age_range'] == backend_age_range]
+        filtered_data = joint_df[joint_df['age_range'] == condition_value]
         if filtered_data.empty:
-            # Check if this is a valid frontend age range that maps to a backend range
-            from .age_range_mapper import get_available_frontend_ages, get_backend_age_ranges
-            available_frontend = get_available_frontend_ages('age_income')
-            available_backend = get_backend_age_ranges('age_income')
-            
-            if condition_value in available_frontend:
-                return {"error": f"Data not available for age range '{condition_value}'. This age range maps to '{backend_age_range}' but no data found for that range."}
-            else:
-                return {"error": f"Age range '{condition_value}' not supported for age-income data. Available age ranges: {', '.join(available_backend)}"}
+            return {"error": f"No data found for age range: {condition_value}"}
         
         total_households = filtered_data['households'].sum()
         
@@ -264,14 +269,9 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
             for _, row in filtered_data.iterrows()
         ]
         
-        # Use original condition_value in the display
-        condition_display = condition_value
-        if backend_age_range != condition_value:
-            condition_display = f"{condition_value} (grouped as {backend_age_range})"
-        
         return {
             "type": "conditional_income_given_age",
-            "condition": f"Age: {condition_display}",
+            "condition": f"Age: {condition_value}",
             "data": result,
             "total_households": int(total_households),
             "data_source": joint_data["data_source"]
@@ -301,109 +301,6 @@ def get_conditional_distribution(joint_data: dict, condition_type: str, conditio
             "total_households": int(total_households),
             "data_source": joint_data["data_source"]
         }
-
-
-def plot_joint_distribution(joint_data: dict, save_path: str = None) -> None:
-    """
-    Create a heatmap visualization of the joint age-income distribution.
-    
-    Args:
-        joint_data: Result from get_distribution()
-        save_path: Optional path to save the plot
-    """
-    df = pd.DataFrame(joint_data['joint_data'])
-    location = joint_data['location']
-    location_name = location.get("subdivision_name") or location.get("county_name")
-    state_name = location.get("state_name")
-    
-    # Create pivot table for heatmap
-    pivot_df = df.pivot(index='age_range', columns='income_range', values='households')
-    
-    # Set up the plot
-    plt.style.use('default')
-    fig, ax = plt.subplots(figsize=(14, 8))
-    
-    # Create heatmap
-    sns.heatmap(pivot_df, annot=True, fmt='d', cmap='YlOrRd', ax=ax, 
-                cbar_kws={'label': 'Number of Households'})
-    
-    ax.set_title(f'Age-Income Joint Distribution\n{location_name}, {state_name}', 
-                 fontsize=14, fontweight='bold')
-    ax.set_xlabel('Household Income Range', fontsize=12)
-    ax.set_ylabel('Age of Householder', fontsize=12)
-    
-    # Rotate x-axis labels for better readability
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
-    
-    # Add data source information
-    fig.suptitle(f'Data Source: {joint_data["data_source"]}', 
-                 fontsize=10, y=0.02, ha='center')
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {save_path}")
-    
-    plt.show()
-
-
-def plot_conditional_distribution(conditional_data: dict, save_path: str = None) -> None:
-    """
-    Create a bar chart for conditional distribution.
-    
-    Args:
-        conditional_data: Result from get_conditional_distribution()
-        save_path: Optional path to save the plot
-    """
-    if "error" in conditional_data:
-        print(f"Error: {conditional_data['error']}")
-        return
-    
-    data = conditional_data['data']
-    condition = conditional_data['condition']
-    
-    # Set up the plot
-    plt.style.use('default')
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    categories = [item['category'] for item in data]
-    values = [item['value'] for item in data]
-    percentages = [item['percentage'] for item in data]
-    
-    # Create color palette
-    colors = plt.cm.viridis(np.linspace(0, 1, len(data)))
-    
-    # Create horizontal bar chart for better readability
-    bars = ax.barh(range(len(categories)), values, color=colors)
-    
-    ax.set_yticks(range(len(categories)))
-    ax.set_yticklabels(categories)
-    ax.set_xlabel('Number of Households', fontsize=12)
-    ax.set_title(f'Distribution Conditioned on {condition}\nTotal Households: {conditional_data["total_households"]:,}', 
-                 fontsize=14, fontweight='bold')
-    
-    # Add value labels on bars
-    for i, (bar, value, pct) in enumerate(zip(bars, values, percentages)):
-        width = bar.get_width()
-        ax.text(width + width*0.01, bar.get_y() + bar.get_height()/2,
-                f'{value:,} ({pct:.1f}%)', ha='left', va='center', fontsize=9)
-    
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    
-    # Add data source information
-    fig.suptitle(f'Data Source: {conditional_data["data_source"]}', 
-                 fontsize=10, y=0.02, ha='center')
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {save_path}")
-    
-    plt.show()
 
 
 if __name__ == "__main__":
@@ -439,8 +336,8 @@ if __name__ == "__main__":
         print("=" * 60)
         
         # Condition on age
-        age_condition = "25 to 44 years"
-        print(f"\nIncome distribution for householders aged {age_condition}:")
+        age_condition = "Householder 25 to 44 years"
+        print(f"\nIncome distribution for {age_condition}:")
         conditional_income = get_conditional_distribution(joint_data, 'age', age_condition)
         if 'error' not in conditional_income:
             for item in conditional_income['data']:
@@ -453,15 +350,5 @@ if __name__ == "__main__":
         if 'error' not in conditional_age:
             for item in conditional_age['data']:
                 print(f"  {item['category']}: {item['value']:,} households ({item['percentage']:.1f}%)")
-        
-        # Create visualizations
-        print(f"\nCreating visualizations...")
-        plot_joint_distribution(joint_data)
-        
-        if 'error' not in conditional_income:
-            plot_conditional_distribution(conditional_income)
-        
-        if 'error' not in conditional_age:
-            plot_conditional_distribution(conditional_age)
     else:
         print("Could not retrieve data for the specified location.")

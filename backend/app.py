@@ -47,6 +47,12 @@ from distribution.age_distribution import get_geography
 from chatbot_service import create_chatbot
 from utils import get_geoid
 from trade_area_demographics import get_isochrone_response
+from unified_age_analysis import get_unified_age_analysis
+from unified_education_analysis import get_unified_education_analysis
+from unified_income_analysis import get_unified_income_analysis
+from unified_gender_analysis import get_unified_gender_analysis
+from unified_profession_analysis import get_unified_profession_analysis
+from unified_race_analysis import get_unified_race_analysis
 
 app = Flask(__name__)
 CORS(app)
@@ -748,29 +754,341 @@ def export_distributions_csv():
         }), 500
 
 
+@app.route('/unified_age_analysis', methods=['POST'])
+def unified_age_analysis():
+    """
+    Get unified age distribution analysis showing all related distributions for a given age range.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "age_range": string (e.g., "25 to 34 years", "Under 18 years")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'age_range']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        age_range = data['age_range']
+
+        logger.info(f"Fetching unified age analysis for {lat}, {lng}, age range: {age_range}")
+
+        # Get unified analysis
+        analysis_result = get_unified_age_analysis(lat, lng, age_range)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified age analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified age analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified age analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified age analysis data",
+            "details": str(e)
+        }), 500
+
+
+@app.route('/unified_education_analysis', methods=['POST'])
+def unified_education_analysis():
+    """
+    Get unified education distribution analysis showing all related distributions for a given education level.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "education_level": string (e.g., "Bachelor's degree", "High school graduate")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'education_level']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        education_level = data['education_level']
+
+        logger.info(f"Fetching unified education analysis for {lat}, {lng}, education: {education_level}")
+
+        # Get unified analysis
+        analysis_result = get_unified_education_analysis(lat, lng, education_level)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified education analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified education analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified education analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified education analysis data",
+            "details": str(e)
+        }), 500
+
+
+@app.route('/unified_income_analysis', methods=['POST'])
+def unified_income_analysis():
+    """
+    Get unified income distribution analysis showing all related distributions for a given income range.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "income_range": string (e.g., "$50,000 to $59,999", "$100,000 or more")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'income_range']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        income_range = data['income_range']
+
+        logger.info(f"Fetching unified income analysis for {lat}, {lng}, income: {income_range}")
+
+        # Get unified analysis
+        analysis_result = get_unified_income_analysis(lat, lng, income_range)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified income analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified income analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified income analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified income analysis data",
+            "details": str(e)
+        }), 500
+
+
+@app.route('/unified_gender_analysis', methods=['POST'])
+def unified_gender_analysis():
+    """
+    Get unified gender distribution analysis showing all related distributions for a given gender.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "gender": string (e.g., "Male", "Female")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'gender']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        gender = data['gender']
+
+        logger.info(f"Fetching unified gender analysis for {lat}, {lng}, gender: {gender}")
+
+        # Get unified analysis
+        analysis_result = get_unified_gender_analysis(lat, lng, gender)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified gender analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified gender analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified gender analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified gender analysis data",
+            "details": str(e)
+        }), 500
+
+
+@app.route('/unified_profession_analysis', methods=['POST'])
+def unified_profession_analysis():
+    """
+    Get unified profession distribution analysis showing all related distributions for a given profession.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "profession": string (e.g., "Management, business, science, and arts occupations", "Service occupations")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'profession']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        profession = data['profession']
+
+        logger.info(f"Fetching unified profession analysis for {lat}, {lng}, profession: {profession}")
+
+        # Get unified analysis
+        analysis_result = get_unified_profession_analysis(lat, lng, profession)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified profession analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified profession analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified profession analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified profession analysis data",
+            "details": str(e)
+        }), 500
+
+
+@app.route('/unified_race_analysis', methods=['POST'])
+def unified_race_analysis():
+    """
+    Get unified race distribution analysis showing all related distributions for a given race/ethnicity.
+
+    Expected JSON body:
+    {
+        "lat": float,
+        "lng": float,
+        "race": string (e.g., "White alone", "Black or African American alone", "Hispanic or Latino")
+    }
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['lat', 'lng', 'race']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(required_fields)}"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+        race = data['race']
+
+        logger.info(f"Fetching unified race analysis for {lat}, {lng}, race: {race}")
+
+        # Get unified analysis
+        analysis_result = get_unified_race_analysis(lat, lng, race)
+
+        if not analysis_result:
+            return jsonify({
+                "error": "Could not retrieve unified race analysis data"
+            }), 500
+
+        logger.info(f"Successfully retrieved unified race analysis with {analysis_result['metadata']['successful_retrievals']} distributions")
+        return jsonify(analysis_result)
+
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        return jsonify({
+            "error": "Invalid input provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching unified race analysis: {e}")
+        return jsonify({
+            "error": "Failed to fetch unified race analysis data",
+            "details": str(e)
+        }), 500
+
+
 @app.route('/storewise_demographics',methods=['POST'])
 def get_storewise_demographics():
     try:
         data = request.get_json()
-        
+
         if not data or 'lat' not in data or 'lng' not in data:
             return jsonify({
                 "error": "Missing required fields: lat, lng"
             }), 400
-            
+
         lat = float(data['lat'])
         lng = float(data['lng'])
 
         response = get_isochrone_response(lat=lat,lon=lng)
         logger.info(f"Successfully fetched all distributions for {lat}, {lng}")
         return jsonify(response)
-        
+
     except ValueError as e:
         logger.error(f"Invalid coordinates: {e}")
         return jsonify({
             "error": "Invalid coordinates provided"
         }), 400
-        
+
     except Exception as e:
         logger.error(f"Error fetching distributions: {e}")
         return jsonify({
