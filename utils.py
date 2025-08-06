@@ -1,4 +1,5 @@
-import requests
+import httpx
+import os
 import json
 import pyproj
 from typing import Tuple,Dict
@@ -9,6 +10,8 @@ from shapely.ops import transform
 
 Geometry4326 = shapely_geom.BaseGeometry
 Geometry3857 = shapely_geom.BaseGeometry
+
+client = httpx.Client(verify=False)
 
 def get_isochrone(location : Dict[str, float]) -> Tuple[Geometry3857, Geometry4326]:
     """
@@ -56,17 +59,36 @@ def get_isochrone(location : Dict[str, float]) -> Tuple[Geometry3857, Geometry43
 
     # Make the API request
     try:
-        response = requests.get(f"{VALHALLA_URL}?json={json_payload}")
+        response = httpx.get(f"{VALHALLA_URL}?json={json_payload}")
         # Check for successful response (status code 200)
         if response.status_code == 200:
             isochrone_data = response.json()
         else:
             print(f"Error: {response.status_code} - {response.text}")
 
-    except requests.exceptions.ConnectionError:
+    except httpx.exceptions.ConnectionError:
         print("Error: Could not connect to Valhalla server. Ensure Valhalla is running and accessible at the specified URL.")
     
     espg_3857 = utm_point(shape(isochrone_data['features'][0]))
     espg_4326 = shape(isochrone_data['features'][0])
 
     return espg_3857,espg_4326
+
+# Facing issues of SSL Certificate, currently manual
+# def retrieve_geoid_geometry(state_id : str,hierarchy_level : str ):
+
+#     assert hierarchy_level.lower() in ['bg','tract'], "Hierarchy must be either bg (Block Group) or tract (Census tract)"
+#     file_path = f'data/{state_id}/{hierarchy_level.lower()}'
+#     file_name = f"tl_2024_{state_id}_{hierarchy_level.lower()}"
+#     os.makedirs(file_path,exist_ok=True)
+
+#     URL = f"https://www2.census.gov/geo/tiger/TIGER2024/{hierarchy_level.upper()}/{file_name}.zip"
+#     print(URL)
+
+#     response = httpx.get(URL)
+#     response.raise_for_status()
+
+#     with open(file_path, "wb") as f:
+#         f.write(response.content)
+
+
