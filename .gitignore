@@ -77,3 +77,6 @@ OLD/
 
 # Cache
 .cache/
+
+# Removing the data folder
+data
