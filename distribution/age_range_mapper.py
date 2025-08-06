@@ -21,14 +21,20 @@ AGE_EDUCATION_RANGES = [
     "18 to 24 years", "25 to 34 years", "35 to 44 years", "45 to 64 years", "65 years and over"
 ]
 
-# Age-Gender distribution ranges (typically same as Age-Income for consistency)
+# Age-Gender distribution ranges (uses fine-grained age ranges same as frontend)
 AGE_GENDER_RANGES = [
-    "Under 25 years", "25 to 44 years", "45 to 64 years", "65 years and over"
+    "Under 5 years", "5 to 9 years", "10 to 14 years", "15 to 17 years", 
+    "18 and 19 years", "20 to 24 years", "25 to 29 years", "30 to 34 years",
+    "35 to 44 years", "45 to 54 years", "55 to 64 years", "65 to 74 years",
+    "75 to 84 years", "85 years and over"
 ]
 
-# Age-Race distribution ranges (typically same as Age-Income for consistency)
+# Age-Race distribution ranges (uses fine-grained age ranges same as frontend)
 AGE_RACE_RANGES = [
-    "Under 25 years", "25 to 44 years", "45 to 64 years", "65 years and over"
+    "Under 5 years", "5 to 9 years", "10 to 14 years", "15 to 17 years", 
+    "18 and 19 years", "20 to 24 years", "25 to 29 years", "30 to 34 years",
+    "35 to 44 years", "45 to 54 years", "55 to 64 years", "65 to 74 years",
+    "75 to 84 years", "85 years and over"
 ]
 
 # Mapping from frontend ranges to backend ranges for each distribution type
@@ -80,51 +86,39 @@ AGE_RANGE_MAPPINGS = {
     },
     
     'age_gender': {
-        # Under 25 years
-        "Under 5 years": "Under 25 years",
-        "5 to 9 years": "Under 25 years",
-        "10 to 14 years": "Under 25 years", 
-        "15 to 17 years": "Under 25 years",
-        "18 and 19 years": "Under 25 years",
-        "20 to 24 years": "Under 25 years",
-        
-        # 25 to 44 years
-        "25 to 29 years": "25 to 44 years",
-        "30 to 34 years": "25 to 44 years",
-        "35 to 44 years": "25 to 44 years",
-        
-        # 45 to 64 years
-        "45 to 54 years": "45 to 64 years",
-        "55 to 64 years": "45 to 64 years",
-        
-        # 65 years and over
-        "65 to 74 years": "65 years and over", 
-        "75 to 84 years": "65 years and over",
-        "85 years and over": "65 years and over"
+        # Direct 1:1 mapping - age_gender uses same fine-grained ranges as frontend
+        "Under 5 years": "Under 5 years",
+        "5 to 9 years": "5 to 9 years",
+        "10 to 14 years": "10 to 14 years",
+        "15 to 17 years": "15 to 17 years",
+        "18 and 19 years": "18 and 19 years",
+        "20 to 24 years": "20 to 24 years",
+        "25 to 29 years": "25 to 29 years",
+        "30 to 34 years": "30 to 34 years",
+        "35 to 44 years": "35 to 44 years",
+        "45 to 54 years": "45 to 54 years",
+        "55 to 64 years": "55 to 64 years",
+        "65 to 74 years": "65 to 74 years",
+        "75 to 84 years": "75 to 84 years",
+        "85 years and over": "85 years and over"
     },
     
     'age_race': {
-        # Under 25 years
-        "Under 5 years": "Under 25 years",
-        "5 to 9 years": "Under 25 years",
-        "10 to 14 years": "Under 25 years",
-        "15 to 17 years": "Under 25 years", 
-        "18 and 19 years": "Under 25 years",
-        "20 to 24 years": "Under 25 years",
-        
-        # 25 to 44 years
-        "25 to 29 years": "25 to 44 years",
-        "30 to 34 years": "25 to 44 years",
-        "35 to 44 years": "25 to 44 years",
-        
-        # 45 to 64 years
-        "45 to 54 years": "45 to 64 years",
-        "55 to 64 years": "45 to 64 years",
-        
-        # 65 years and over
-        "65 to 74 years": "65 years and over",
-        "75 to 84 years": "65 years and over", 
-        "85 years and over": "65 years and over"
+        # Direct 1:1 mapping - age_race uses same fine-grained ranges as frontend
+        "Under 5 years": "Under 5 years",
+        "5 to 9 years": "5 to 9 years",
+        "10 to 14 years": "10 to 14 years",
+        "15 to 17 years": "15 to 17 years",
+        "18 and 19 years": "18 and 19 years",
+        "20 to 24 years": "20 to 24 years",
+        "25 to 29 years": "25 to 29 years",
+        "30 to 34 years": "30 to 34 years",
+        "35 to 44 years": "35 to 44 years",
+        "45 to 54 years": "45 to 54 years",
+        "55 to 64 years": "55 to 64 years",
+        "65 to 74 years": "65 to 74 years",
+        "75 to 84 years": "75 to 84 years",
+        "85 years and over": "85 years and over"
     }
 }
 
