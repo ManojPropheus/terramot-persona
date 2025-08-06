@@ -9,6 +9,7 @@ import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 import BivariateProbability from './BivariateProbability';
 import IndividualDistributions from './IndividualDistributions';
 import UnifiedDemographicAnalysis from './UnifiedDemographicAnalysis';
+import StorewiseDemographics from './StorewiseDemographics';
 
 let DefaultIcon = L.icon({
     iconUrl: icon,
@@ -791,6 +792,9 @@ function App() {
   const [geography, setGeography] = useState(null);
   const [hoveredSubdivision, setHoveredSubdivision] = useState(null);
   const [activeTab, setActiveTab] = useState('individual');
+  const [storewiseData, setStorewiseData] = useState(null);
+  const [isochroneGeometry, setIsochroneGeometry] = useState(null);
+  const [blockGroupsGeometry, setBlockGroupsGeometry] = useState(null);
 
   const handleMapHover = (latlng) => {
     // Removed hover functionality to prevent excessive API calls
@@ -802,33 +806,48 @@ function App() {
     setLoading(true);
     setSelectedLocation({ lat, lng });
     setGeography(null);
+    setStorewiseData(null);
+    setIsochroneGeometry(null);
+    setBlockGroupsGeometry(null);
 
     try {
-      const response = await fetch('http://localhost:5001/distribution', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ lat, lng }),
-      });
-
-      const geographyResponse = await fetch('http://localhost:5001/geography', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat, lng }),
-      });
-
-      const csv_export = await fetch('http://localhost:5001/export_csv',{
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lat: selectedLocation?.lat,
-          lng: selectedLocation?.lng
+      // Fetch all data in parallel
+      const [
+        distributionResponse, 
+        geographyResponse, 
+        csv_export,
+        storewiseResponse,
+        blockGroupsResponse
+      ] = await Promise.all([
+        fetch('http://localhost:5001/distribution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
         }),
-      });
+        fetch('http://localhost:5001/geography', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        }),
+        fetch('http://localhost:5001/export_csv', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        }),
+        fetch('http://localhost:5001/storewise_demographics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        }),
+        fetch('http://localhost:5001/block_groups_geometry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lng }),
+        })
+      ]);
 
-      if (response.ok) {
-        const data = await response.json();
+      if (distributionResponse.ok) {
+        const data = await distributionResponse.json();
         setDistributionData(data);
       } else {
         console.error('Failed to fetch distribution data');
@@ -841,10 +860,31 @@ function App() {
       } else {
         console.error('Failed to fetch geography data');
       }
+
+      if (storewiseResponse.ok) {
+        const data = await storewiseResponse.json();
+        setStorewiseData(data);
+        // Extract geometry for map visualization
+        if (data.geometry) {
+          setIsochroneGeometry(data.geometry);
+        }
+      } else {
+        console.error('Failed to fetch storewise demographics data');
+      }
+
+      if (blockGroupsResponse.ok) {
+        const data = await blockGroupsResponse.json();
+        setBlockGroupsGeometry(data);
+      } else {
+        console.error('Failed to fetch block groups geometry data');
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       setDistributionData(null);
       setGeography(null);
+      setStorewiseData(null);
+      setIsochroneGeometry(null);
+      setBlockGroupsGeometry(null);
     } finally {
       setLoading(false);
     }
@@ -950,12 +990,62 @@ function App() {
             />
             <MapEventHandler onMapClick={handleMapClick} onMapHover={handleMapHover} />
             
+            {/* Show block groups geometry if available and storewise tab is active */}
+            {blockGroupsGeometry && activeTab === 'storewise' && (
+              <GeoJSON
+                key={`blockgroups-${JSON.stringify(blockGroupsGeometry).substring(0, 50)}`} // Force re-render when geometry changes
+                data={blockGroupsGeometry}
+                style={(feature) => ({
+                  fillColor: '#4f46e5',
+                  fillOpacity: Math.max(0.1, (feature?.properties?.intersection_pct || 10) / 100 * 0.4),
+                  color: '#4f46e5',
+                  weight: 1.5,
+                  opacity: 0.7
+                })}
+                onEachFeature={(feature, layer) => {
+                  if (feature.properties) {
+                    layer.bindPopup(`
+                      <div>
+                        <strong>Block Group:</strong> ${feature.properties.GEO_ID}<br/>
+                        <strong>Intersection:</strong> ${feature.properties.intersection_pct}%
+                      </div>
+                    `);
+                  }
+                }}
+              />
+            )}
+
+            {/* Show isochrone geometry if available and storewise tab is active */}
+            {isochroneGeometry && activeTab === 'storewise' && (
+              <GeoJSON
+                key={JSON.stringify(isochroneGeometry)} // Force re-render when geometry changes
+                data={isochroneGeometry}
+                style={{
+                  fillColor: '#ff6b35',
+                  fillOpacity: 0.25,
+                  color: '#ff4500',
+                  weight: 3,
+                  opacity: 0.9,
+                  dashArray: '8, 4'
+                }}
+              />
+            )}
             
             {selectedLocation && (
                 <Marker position={[selectedLocation.lat,selectedLocation.lng]}>
                   <Popup>
-                  You clicked here! <br />
-                  Lat: {selectedLocation.lat.toFixed(4)}, Lng: {selectedLocation.lng.toFixed(4)}
+                  {activeTab === 'storewise' ? (
+                    <>
+                      <strong>Trade Area Center</strong><br />
+                      10-minute walking radius<br />
+                      Lat: {selectedLocation.lat.toFixed(4)}, Lng: {selectedLocation.lng.toFixed(4)}
+                    </>
+                  ) : (
+                    <>
+                      You clicked here! <br />
+                      Lat: {selectedLocation.lat.toFixed(4)}, Lng: {selectedLocation.lng.toFixed(4)}
+                    </>
+                  )}
                 </Popup>
                 </Marker>
             )}
@@ -1002,6 +1092,7 @@ function App() {
                 borderRadius: '8px',
                 border: '1px solid #2a2e36',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 gap: '12px'
               }}>
@@ -1013,7 +1104,14 @@ function App() {
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }}></div>
-                <p style={{ margin: 0, color: '#eef0f4', fontSize: '14px' }}>Loading distribution data...</p>
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ margin: '0 0 8px 0', color: '#eef0f4', fontSize: '14px', fontWeight: '500' }}>
+                    Loading comprehensive demographic data...
+                  </p>
+                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                    • Individual distributions • Bivariate analysis • Unified insights • Trade area mapping
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1036,6 +1134,57 @@ function App() {
                 {selectedLocation.lat.toFixed(4)}, {selectedLocation.lng.toFixed(4)}
               </div>
               {locationName && <div style={{ marginTop: '4px', color: '#008a89' }}>{locationName}</div>}
+            </div>
+          )}
+
+          {/* Trade Area Legend */}
+          {isochroneGeometry && activeTab === 'storewise' && (
+            <div style={{
+              position: 'absolute',
+              bottom: '16px',
+              left: '16px',
+              backgroundColor: '#1a1e26',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: '1px solid #2a2e36',
+              zIndex: 1000,
+              fontSize: '12px',
+              color: '#eef0f4'
+            }}>
+              <div style={{ fontWeight: '500', marginBottom: '8px', color: '#ff4500' }}>Trade Area Legend</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div style={{
+                  width: '16px',
+                  height: '3px',
+                  backgroundColor: '#ff4500',
+                  opacity: 0.9,
+                  borderRadius: '1px'
+                }}></div>
+                <span style={{ color: '#d1d5db' }}>10-minute walking radius</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  backgroundColor: '#ff6b35',
+                  opacity: 0.25,
+                  borderRadius: '2px'
+                }}></div>
+                <span style={{ color: '#d1d5db' }}>Walking catchment area</span>
+              </div>
+              {blockGroupsGeometry && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    backgroundColor: '#4f46e5',
+                    opacity: 0.3,
+                    borderRadius: '2px',
+                    border: '1px solid #4f46e5'
+                  }}></div>
+                  <span style={{ color: '#d1d5db' }}>Census block groups</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1062,51 +1211,67 @@ function App() {
               onClick={() => setActiveTab('individual')}
               style={{
                 flex: 1,
-                padding: '16px 20px',
+                padding: '12px 16px',
                 backgroundColor: activeTab === 'individual' ? '#008a89' : 'transparent',
                 color: activeTab === 'individual' ? '#ffffff' : '#9ca3af',
                 border: 'none',
                 borderRadius: '12px 0 0 0',
-                fontSize: '14px',
+                fontSize: '12px',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
             >
-              Individual Distributions
+              Individual
             </button>
             <button
               onClick={() => setActiveTab('bivariate')}
               style={{
                 flex: 1,
-                padding: '16px 20px',
+                padding: '12px 16px',
                 backgroundColor: activeTab === 'bivariate' ? '#008a89' : 'transparent',
                 color: activeTab === 'bivariate' ? '#ffffff' : '#9ca3af',
                 border: 'none',
-                fontSize: '14px',
+                fontSize: '12px',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
             >
-              Bivariate Distributions
+              Bivariate
             </button>
             <button
               onClick={() => setActiveTab('unified_analysis')}
               style={{
                 flex: 1,
-                padding: '16px 20px',
+                padding: '12px 16px',
                 backgroundColor: activeTab === 'unified_analysis' ? '#008a89' : 'transparent',
                 color: activeTab === 'unified_analysis' ? '#ffffff' : '#9ca3af',
                 border: 'none',
-                borderRadius: '0 12px 0 0',
-                fontSize: '14px',
+                fontSize: '12px',
                 fontWeight: '600',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease'
               }}
             >
-              Unified Analysis
+              Unified
+            </button>
+            <button
+              onClick={() => setActiveTab('storewise')}
+              style={{
+                flex: 1,
+                padding: '12px 16px',
+                backgroundColor: activeTab === 'storewise' ? '#008a89' : 'transparent',
+                color: activeTab === 'storewise' ? '#ffffff' : '#9ca3af',
+                border: 'none',
+                borderRadius: '0 12px 0 0',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Trade Area
             </button>
           </div>
 
@@ -1145,6 +1310,13 @@ function App() {
               <UnifiedDemographicAnalysis 
                 selectedLocation={selectedLocation}
                 locationName={locationName}
+              />
+            ) : activeTab === 'storewise' ? (
+              <StorewiseDemographics 
+                selectedLocation={selectedLocation}
+                locationName={locationName}
+                storewiseData={storewiseData}
+                loading={loading}
               />
             ) : null}
           </div>

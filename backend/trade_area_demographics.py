@@ -60,5 +60,63 @@ def get_isochrone_response(lat,lon):
             }
         
         return output_dict
+
+
+def get_block_groups_geometry(lat, lon):
+    """
+    Get block group geometries that intersect with the isochrone.
+    Returns GeoJSON FeatureCollection of intersecting block groups.
+    """
+    location = {'lat': lat, 'lon': lon}
+
+    wgs84 = pyproj.CRS('EPSG:4326')
+    utm = pyproj.CRS('EPSG:3857')
+
+    project = pyproj.Transformer.from_crs(wgs84, utm, always_xy=True).transform
+    utm_point = lambda x: transform(project, x)
+
+    data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/')
+
+    # Ensure we have the combined data
+    if not os.path.isfile(os.path.join(data_path, 'combined_data.csv')):
+        get_dist(lat, lon)
+
+    # Load California block groups
+    california_block_groups = gpd.read_file(os.path.join(data_path, 'california_block_groups/tl_2020_06_bg.shp'))
+    california_block_groups.rename(columns={'GEOID': 'GEO_ID'}, inplace=True)
+    california_block_groups = california_block_groups[['GEO_ID', 'geometry']]
+    california_block_groups.loc[:, 'geometry_3857'] = california_block_groups['geometry'].apply(utm_point)
+
+    # Get isochrone geometry
+    geometry_3857, geometry_4326 = get_isochrone(location)
+
+    # Find intersecting block groups
+    area_of_intersection = lambda x: x.intersection(geometry_3857).area
+    california_block_groups['intersection_area'] = california_block_groups['geometry_3857'].apply(area_of_intersection)
+    california_block_groups['geoid_area'] = california_block_groups['geometry_3857'].apply(lambda x: x.area)
+    california_block_groups['pct_intersection'] = california_block_groups['intersection_area'] / california_block_groups['geoid_area']
+
+    # Filter to only intersecting block groups (>1% intersection to avoid tiny slivers)
+    intersecting_block_groups = california_block_groups[california_block_groups['pct_intersection'] > 0.01].copy()
+
+    # Convert to GeoJSON format
+    features = []
+    for _, row in intersecting_block_groups.iterrows():
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "GEO_ID": row['GEO_ID'],
+                "intersection_pct": round(row['pct_intersection'] * 100, 1)
+            },
+            "geometry": json.loads(to_geojson(row['geometry']))
+        }
+        features.append(feature)
+
+    geojson_output = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+
+    return geojson_output
     
 

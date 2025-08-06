@@ -1094,7 +1094,39 @@ def get_storewise_demographics():
         return jsonify({
             "error": "Failed to fetch distribution data",
             "details": str(e)
-        }), 5
+        }), 500
+
+
+@app.route('/block_groups_geometry', methods=['POST'])
+def get_block_groups_geometry_endpoint():
+    try:
+        data = request.get_json()
+
+        if not data or 'lat' not in data or 'lng' not in data:
+            return jsonify({
+                "error": "Missing required fields: lat, lng"
+            }), 400
+
+        lat = float(data['lat'])
+        lng = float(data['lng'])
+
+        from trade_area_demographics import get_block_groups_geometry
+        response = get_block_groups_geometry(lat=lat, lon=lng)
+        logger.info(f"Successfully fetched block groups geometry for {lat}, {lng}")
+        return jsonify(response)
+
+    except ValueError as e:
+        logger.error(f"Invalid coordinates: {e}")
+        return jsonify({
+            "error": "Invalid coordinates provided"
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Error fetching block groups geometry: {e}")
+        return jsonify({
+            "error": "Failed to fetch block groups geometry",
+            "details": str(e)
+        }), 500
 
 
 
