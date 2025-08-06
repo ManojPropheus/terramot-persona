@@ -1,6 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
+# QUICK FIX TO SOLVE RELATIVE IMPORTS
+
 import pandas as pd
 import requests
-import os
+
 from age import get_and_process_block_group_age_data
 from education import get_and_process_block_group_education_data
 from gender import get_and_process_block_group_gender_data
@@ -127,7 +133,7 @@ def concatenate_and_process_data():
 
         try:
             # Read the CSV file into a DataFrame
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path,dtype={'GEO_ID' : 'str'})
             print(f"Successfully read {file_path}")
 
             config = file_config[file_key]
@@ -163,7 +169,10 @@ def concatenate_and_process_data():
 
     # Concatenate all the processed DataFrames
     combined_df = pd.concat(all_dataframes, ignore_index=True)
-    combined_df.to_csv("combined_data.csv", index=False)
+    data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),'../data/')
+    os.makedirs(data_path,exist_ok=True)
+    combined_df.to_csv(os.path.join(data_path,"combined_data.csv"), index=False)
+    
     print("\nAll files have been processed and concatenated.")
 
     return combined_df
